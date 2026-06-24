@@ -14,6 +14,9 @@ import { useTheme } from '@/hooks/useTheme';
 import { useConfig } from '@/hooks/useConfig';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/lib/db/supabase';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -33,14 +36,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { theme, toggleTheme } = useTheme();
   const { config } = useConfig();
   const { cajaAbierta } = useCajaAbierta();
+  const { negocioId } = useAuth();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const { data: negocio } = useQuery({
+    queryKey: ['negocio-nombre', negocioId],
+    queryFn: async () => {
+      if (!negocioId) return null;
+      const { data, error } = await supabase
+        .from('negocios')
+        .select('nombre')
+        .eq('id', negocioId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!negocioId,
+  });
+
   const logo = config?.logo_url;
   // El nombre del negocio vive en la tabla `negocios`; la config no lo incluye.
   // Fallback razonable mientras se cablea (ver docs/BUGS_PENDING.md).
-  const nombre = 'POS MH';
+  const nombre = negocio?.nombre || 'POS MH';
 
   useEffect(() => {
     setMobileOpen(false);
