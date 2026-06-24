@@ -20,6 +20,7 @@ create or replace function public.registrar_negocio(
 returns json
 language plpgsql
 security definer
+set search_path = public
 as $function$
 declare
   v_negocio_id uuid;
@@ -49,3 +50,9 @@ begin
   );
 end;
 $function$;
+
+-- Hardening: SECURITY DEFINER callable SOLO por service_role (las API routes la
+-- invocan con la service role key). Se revoca a anon/authenticated/public para
+-- que ningún cliente con la anon key pueda crear negocios/usuarios saltándose la ruta.
+revoke execute on function public.registrar_negocio(uuid, text, text, text) from anon, authenticated, public;
+grant execute on function public.registrar_negocio(uuid, text, text, text) to service_role;
