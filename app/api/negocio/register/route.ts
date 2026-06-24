@@ -21,7 +21,44 @@ const registerSchema = z.object({
   nombre_visible: z.string().trim().min(2, 'Tu nombre es requerido'),
 });
 
+// ── Rate limiting por IP (en memoria) ───────────────────────────────
+// Endpoint público de alta: máximo 3 intentos por IP en una ventana de 15 min.
+// Caveat: el Map vive en memoria del proceso → se reinicia en cada redeploy y
+// no se comparte entre instancias serverless. Suficiente como freno básico;
+// para producción a escala usar un store compartido (Upstash/Vercel KV).
+const RATE_LIMIT_MAX = 3;
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutos
+const registerAttempts = new Map<string, number[]>();
+
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return request.headers.get('x-real-ip')?.trim() || 'unknown';
+}
+
+/** Registra el intento y devuelve true si la IP superó el límite de la ventana. */
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const recent = (registerAttempts.get(ip) ?? []).filter((ts) => ts > windowStart);
+  if (recent.length >= RATE_LIMIT_MAX) {
+    registerAttempts.set(ip, recent); // conservar la ventana podada
+    return true;
+  }
+  recent.push(now);
+  registerAttempts.set(ip, recent);
+  return false;
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
+  const ip = getClientIp(request);
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: 'Demasiados intentos. Espera 15 minutos.' },
+      { status: 429 },
+    );
+  }
+
   const body: unknown = await request.json().catch(() => null);
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {

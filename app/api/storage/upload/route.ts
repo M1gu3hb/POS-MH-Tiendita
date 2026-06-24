@@ -30,10 +30,14 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const supabase = createServerSupabase();
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
-  const path = `${ctx.negocioId}/${crypto.randomUUID()}.${ext}`;
+  // Ruta acotada por negocio: `<negocio_id>/logo.<ext>`. El primer segmento de la
+  // ruta es el negocio_id, que es lo que valida la política de escritura del
+  // bucket (005_storage_policy.sql, (storage.foldername(name))[1] = get_negocio_id()).
+  // Nombre fijo `logo` → upsert para permitir reemplazar el logo existente.
+  const path = `${ctx.negocioId}/logo.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    upsert: false,
+    upsert: true,
     contentType: file.type || undefined,
   });
 
