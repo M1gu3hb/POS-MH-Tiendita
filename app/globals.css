@@ -1,0 +1,291 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: 'Inter', sans-serif;
+    --background: 220 20% 95%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 10%;
+    --primary: 214 80% 52%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 88%;
+    --secondary-foreground: 220 20% 20%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 46%;
+    --accent: 214 80% 95%;
+    --accent-foreground: 214 80% 35%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 86%;
+    --input: 220 13% 90%;
+    --ring: 214 80% 52%;
+    --chart-1: 214 80% 52%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --radius: 0.75rem;
+    --sidebar-background: 220 25% 13%;
+    --sidebar-foreground: 220 10% 85%;
+    --sidebar-primary: 214 80% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 20%;
+    --sidebar-accent-foreground: 220 10% 90%;
+    --sidebar-border: 220 20% 20%;
+    --sidebar-ring: 214 80% 52%;
+    --success: 152 60% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 220 20% 7%;
+    --foreground: 220 10% 95%;
+    --card: 220 20% 10%;
+    --card-foreground: 220 10% 95%;
+    --popover: 220 20% 10%;
+    --popover-foreground: 220 10% 95%;
+    --primary: 214 80% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 16%;
+    --secondary-foreground: 220 10% 90%;
+    --muted: 220 14% 14%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 214 60% 18%;
+    --accent-foreground: 214 80% 70%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 18%;
+    --input: 220 14% 18%;
+    --ring: 214 80% 55%;
+    --chart-1: 214 80% 55%;
+    --chart-2: 160 60% 50%;
+    --chart-3: 30 80% 60%;
+    --chart-4: 280 65% 65%;
+    --chart-5: 340 75% 60%;
+    --sidebar-background: 220 25% 8%;
+    --sidebar-foreground: 220 10% 85%;
+    --sidebar-primary: 214 80% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 14%;
+    --sidebar-accent-foreground: 214 80% 75%;
+    --sidebar-border: 220 20% 15%;
+    --sidebar-ring: 214 80% 55%;
+    --success: 152 60% 48%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-inter;
+  }
+}
+
+/* ===== SKEUOMORPHIC UTILITY CLASSES ===== */
+
+/* Raised card — light version */
+.skeu-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.9) inset,
+    0 -1px 0 0 rgba(0, 0, 0, 0.06) inset,
+    0 4px 12px 0 rgba(0, 0, 0, 0.08),
+    0 1px 3px 0 rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius);
+}
+
+.dark .skeu-card {
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.06) inset,
+    0 -1px 0 0 rgba(0, 0, 0, 0.3) inset,
+    0 4px 16px 0 rgba(0, 0, 0, 0.4),
+    0 1px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Inset / pressed input */
+.skeu-input {
+  box-shadow:
+    0 2px 4px 0 rgba(0, 0, 0, 0.1) inset,
+    0 1px 0 0 rgba(255, 255, 255, 0.7);
+}
+
+.dark .skeu-input {
+  box-shadow:
+    0 2px 6px 0 rgba(0, 0, 0, 0.5) inset,
+    0 1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Primary button raised */
+.skeu-btn-primary {
+  background: linear-gradient(to bottom, hsl(214 80% 58%), hsl(214 80% 46%));
+  box-shadow:
+    0 1px 0 hsl(214 80% 62%) inset,
+    0 -1px 0 hsl(214 80% 35%) inset,
+    0 4px 10px rgba(37, 99, 235, 0.35),
+    0 1px 3px rgba(0, 0, 0, 0.15);
+  border: 1px solid hsl(214 80% 40%);
+  color: white;
+}
+
+.skeu-btn-primary:hover {
+  background: linear-gradient(to bottom, hsl(214 80% 62%), hsl(214 80% 50%));
+  box-shadow:
+    0 1px 0 hsl(214 80% 66%) inset,
+    0 -1px 0 hsl(214 80% 38%) inset,
+    0 6px 16px rgba(37, 99, 235, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.18);
+}
+
+.skeu-btn-primary:active {
+  background: linear-gradient(to bottom, hsl(214 80% 44%), hsl(214 80% 52%));
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.2) inset,
+    0 1px 3px rgba(37, 99, 235, 0.2);
+  transform: translateY(1px);
+}
+
+/* Destructive button */
+.skeu-btn-danger {
+  background: linear-gradient(to bottom, hsl(0 72% 56%), hsl(0 72% 44%));
+  box-shadow:
+    0 1px 0 hsl(0 72% 60%) inset,
+    0 -1px 0 hsl(0 72% 36%) inset,
+    0 4px 10px rgba(220, 38, 38, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.15);
+  border: 1px solid hsl(0 72% 38%);
+  color: white;
+}
+
+.skeu-btn-danger:active {
+  transform: translateY(1px);
+}
+
+/* Outline ghost button */
+.skeu-btn-ghost {
+  background: linear-gradient(to bottom, hsl(var(--card)), hsl(var(--secondary)));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.05) inset,
+    0 2px 4px rgba(0, 0, 0, 0.08);
+  border: 1px solid hsl(var(--border));
+}
+
+.dark .skeu-btn-ghost {
+  background: linear-gradient(to bottom, hsl(220 14% 18%), hsl(220 14% 14%));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset,
+    0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.skeu-btn-ghost:active {
+  background: linear-gradient(to bottom, hsl(var(--secondary)), hsl(var(--card)));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) inset;
+  transform: translateY(1px);
+}
+
+/* Panel / console */
+.skeu-panel {
+  background: linear-gradient(160deg, hsl(var(--card)) 0%, hsl(var(--secondary) / 0.4) 100%);
+  border: 1px solid hsl(var(--border));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 8px 24px rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius);
+}
+
+.dark .skeu-panel {
+  background: linear-gradient(160deg, hsl(220 20% 12%) 0%, hsl(220 20% 9%) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Printable styles - always white regardless of dark mode */
+.ticket-printable,
+.printable-doc,
+.cash-cut-pdf,
+.pdf-corte-caja {
+  background: white !important;
+  color: #000 !important;
+}
+
+.ticket-printable * {
+  color: #000 !important;
+  background: transparent !important;
+}
+
+.printable-doc *,
+.cash-cut-pdf *,
+.pdf-corte-caja * {
+  color: #111 !important;
+  background: transparent !important;
+  border-color: #ccc !important;
+}
+
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: black !important;
+    width: 80mm !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .ticket-printable,
+  .ticket-printable * {
+    visibility: visible;
+  }
+  .ticket-printable {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    min-width: 80mm !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    clip-path: none !important;
+    margin: 0 !important;
+    padding: 4mm !important;
+    background: white !important;
+    color: #000 !important;
+    transform: none !important;
+  }
+  /* Limpiar wrappers que envuelven el ticket (modal, sombras, fondo dentado) */
+  .ticket-printable,
+  .ticket-printable * {
+    background: transparent !important;
+  }
+  .ticket-printable {
+    background: white !important;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+}
