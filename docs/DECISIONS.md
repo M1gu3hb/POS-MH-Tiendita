@@ -114,3 +114,43 @@ indica que el audit log se escribe **server-side**.
 con `service_role` (ignora RLS). Sin políticas de UPDATE/DELETE para clientes → registro inalterable.
 **Alternativas descartadas:** CRUD completo por miembro — permitiría manipular/borrar evidencia de auditoría.
 **Consecuencias:** Toda escritura de auditoría debe pasar por las API Routes con la service role key.
+
+## [2026-06-24] Decisión: Alinear el código al RPC real `registrar_negocio` (repo == BD)
+**Contexto:** La BD desplegada (migración `003_register_rpc` del usuario) tiene la función
+`registrar_negocio(p_auth_user_id, p_nombre_negocio, p_nombre_visible, p_email)` que **devuelve json**,
+pero `route.ts` y el `003_functions.sql` del repo llamaban a `crear_negocio_inicial` (3 params, returns uuid).
+El registro devolvía 500: "Could not find the function public.crear_negocio_inicial(...)".
+**Decisión:** Introspeccionar la BD (vía Supabase MCP) para obtener el nombre/firma reales y **alinear
+el código y la migración** a `registrar_negocio` (4 params, returns json `{negocio_id, usuario_id}`).
+No se renombró la función en la BD.
+**Alternativas descartadas:** Crear `crear_negocio_inicial` en la BD para que coincida con el código —
+duplicaría funciones y se alejaría de lo ya desplegado.
+**Consecuencias:** Una sola fuente de verdad. Regla operativa: si repo y BD divergen, **introspeccionar
+la BD real** antes de cambiar código.
+
+## [2026-06-24] Decisión: Hardening de `registrar_negocio` (SECURITY DEFINER seguro)
+**Contexto:** La función estaba como `SECURITY DEFINER` **sin `search_path` fijo** y con `EXECUTE`
+para `anon`/`authenticated`/`public`. Como la anon key viaja en el bundle del cliente, cualquiera podía
+llamarla directo (`/rest/v1/rpc/registrar_negocio`) y crear negocios/usuarios saltándose la API route.
+**Decisión:** `alter function ... set search_path = public`; `revoke execute ... from anon, authenticated, public`;
+`grant execute ... to service_role`. Aplicado en BD y en `003_functions.sql`. La API route usa la service role key, así que sigue funcionando.
+**Alternativas descartadas:** Validaciones extra dentro de la función — no cierran el vector de abuso por anon.
+**Consecuencias:** El alta de tenant solo es invocable server-side. Patrón a replicar en futuras funciones SECURITY DEFINER.
+
+## [2026-06-24] Decisión: Bucket `negocio-assets` público + políticas de escritura autenticada
+**Contexto:** `/api/storage/upload` usa el cliente de servidor ligado a la sesión del usuario (rol
+`authenticated`), sujeto a RLS de `storage.objects`. Un bucket público solo habilita lectura; sin
+políticas, los `insert` quedan denegados.
+**Decisión:** Crear el bucket `negocio-assets` público + 3 políticas en `storage.objects`: SELECT público,
+INSERT/UPDATE para `authenticated`, todas acotadas a `bucket_id = 'negocio-assets'`. Capturado en `004_storage_realtime.sql`.
+**Alternativas descartadas:** Subir con service role desde la ruta — innecesario y menos granular que RLS por rol.
+**Consecuencias:** La subida de logo funciona para usuarios autenticados; las imágenes son de lectura pública (URL).
+
+## [2026-06-24] Decisión: Capturar Storage + Realtime en `004_storage_realtime.sql`
+**Contexto:** El bucket y la publicación Realtime son estado de BD que el repo no reflejaba.
+**Decisión:** Crear `supabase/migrations/004_storage_realtime.sql` (idempotente) con el bucket, sus
+políticas y el `alter publication supabase_realtime add table ...` para `scan_events`, `carrito_items`,
+`carritos_activos`. Aplicado el mismo SQL a la BD (repo == BD).
+**Consecuencias:** Reproducible en un entorno nuevo. Hoy son 4 migraciones: 001, 002, 003, 004.
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

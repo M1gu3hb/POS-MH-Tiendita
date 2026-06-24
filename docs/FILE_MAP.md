@@ -1,66 +1,84 @@
-# FILE_MAP — Árbol del proyecto
+# FILE_MAP — Árbol real del proyecto
 
-Descripción de cada archivo del proyecto **migrado** (no de `extracted/`, que es la
-fuente original de referencia). Se actualiza conforme avanzan las fases.
+Estado al 2026-06-24. Refleja los archivos que existen ahora. `extracted/` (fuente Base44/Vite
+original) y `node_modules/` quedan fuera del build y de git.
 
 ```
 pos-mh-tiendita/
+├── PROJECT_CONTEXT.md          Qué es, stack, estado
 ├── ARCHITECTURE.md             Resumen de alto nivel (<2 min)
-├── PROJECT_CONTEXT.md          Qué es el proyecto, stack, objetivo
 ├── README.md                   Setup local (env, migraciones, scripts)
-├── SECURITY.md                 Decisiones y controles de seguridad
-├── package.json                Deps (Next + Supabase + Stripe; sin Base44/Vite)
-├── next.config.mjs             Config de Next (images: hosts de Supabase)
+├── SECURITY.md                 Controles de seguridad
+├── package.json / package-lock.json   Deps (Next + Supabase + Stripe; sin Base44/Vite)
+├── next.config.mjs             Config Next (images: hosts Supabase)
 ├── tsconfig.json               TS estricto, alias @/* → ./src/*, excluye extracted
-├── tailwind.config.ts          Tailwind portado 1:1 (content → app/ + src/)
-├── postcss.config.js           Tailwind + autoprefixer
-├── components.json             Config de shadcn/ui
-├── .eslintrc.json              next/core-web-vitals
-├── .env.example                Variables (Supabase, Stripe, App)
-├── middleware.ts               Borde de seguridad → updateSession
+├── tailwind.config.ts · postcss.config.js · components.json · .eslintrc.json
+├── .env.example                Plantilla de variables  (·  .env.local real, gitignored)
+├── next-env.d.ts · .gitignore
+├── middleware.ts               Borde de seguridad raíz → updateSession
 │
-├── app/                        Next.js App Router
+├── app/                        NEXT.JS APP ROUTER
 │   ├── layout.tsx              Layout raíz (monta <Providers>)
-│   ├── globals.css             Tokens HSL + clases skeuomórficas (.skeu-*) portadas
-│   ├── (auth)/
-│   │   ├── layout.tsx          Layout centrado de auth
-│   │   ├── login/page.tsx      Login (password + magic link)
-│   │   └── register/page.tsx   Alta de negocio (→ /api/negocio/register)
+│   ├── globals.css             Tokens HSL + clases skeuomórficas (.skeu-*)
+│   ├── not-found.tsx           404
+│   ├── (auth)/                 layout.tsx · login/page.tsx · register/page.tsx
+│   ├── (dashboard)/            layout.tsx (sidebar/nav) + páginas .jsx:
+│   │     page.jsx (Dashboard) · venta · escaner · caja · productos · inventario ·
+│   │     egresos · registros · configuracion · cuenta · suscripcion
+│   ├── vista-cliente/page.jsx  Pantalla cliente (pública)
+│   ├── suscripcion/            activar · success · cancel  (públicas, retornos Stripe)
 │   └── api/
-│       └── negocio/register/route.ts   Alta: admin createUser + RPC transaccional
+│         negocio/register/route.ts     Alta: admin createUser + RPC registrar_negocio
+│         storage/upload/route.ts       Subida a bucket negocio-assets
+│         stripe/{status,checkout,portal,refresh,webhook}/route.ts
 │
 ├── src/
+│   ├── lib/
+│   │   ├── auth/      AuthContext.tsx · useAuth.ts · middleware.ts (updateSession) · server.ts (ctx server-side)
+│   │   ├── db/        CAPA DE DATOS (única que toca Supabase):
+│   │   │     supabase.ts (browser) · supabase-server.ts (server + admin, server-only) ·
+│   │   │     types.ts (tipos de las 20 tablas + enums) ·
+│   │   │     usuarios · productos · configuracion · caja · ventas · carrito · inventario ·
+│   │   │     egresos · reportes · suscripcion · categorias · proveedores · scan · audit (.ts)
+│   │   ├── stripe/server.ts   Cliente Stripe (server-only)
+│   │   ├── productLookup.ts · query-client.ts
+│   │   ├── utils.js (cn) · downloadHtmlReport.js · downloadPdfReport.js
+│   ├── hooks/        useConfig · useCajaAbierta · useCarritoActivo (relacional+Realtime) ·
+│   │                 useProductoLookup · useStripeConfig · useSubscriptionStatus ·
+│   │                 useUserScopedStorage · useTheme (wrapper next-themes) (.ts) ·
+│   │                 use-mobile · useAudioReady · useGatedAction · useIsTabletOrMobile ·
+│   │                 useSoundEnabled · useSubscriptionGateStore (.js/.jsx)
 │   ├── components/
-│   │   └── providers/Providers.tsx     Theme + Query + Auth + Toaster (cliente)
-│   └── lib/
-│       ├── query-client.ts             Factory de QueryClient (portado)
-│       ├── auth/
-│       │   ├── AuthContext.tsx         Supabase Auth: sesión + perfil de negocio
-│       │   ├── useAuth.ts              Re-export del hook useAuth
-│       │   └── middleware.ts           updateSession (refresco sesión + protección rutas)
-│       └── db/                         CAPA DE DATOS (única que toca Supabase)
-│           ├── supabase.ts             Cliente de navegador (createBrowserClient)
-│           ├── supabase-server.ts      Cliente servidor + admin (service role) [server-only]
-│           ├── types.ts                Tipos de dominio de las 20 tablas + enums
-│           ├── usuarios.ts             Repo usuarios (perfil por auth_user_id)
-│           ├── productos.ts            Repo productos (CRUD + búsqueda + barcode)
-│           ├── configuracion.ts        Repo configuracion_negocio
-│           └── audit.ts                Repo audit_log (solo escritura, server-only)
+│   │   ├── ui/            49 primitivas shadcn (.jsx; Button.tsx tipado) — "use client"
+│   │   ├── providers/    Providers.tsx (Theme + Query + Auth + Toaster)
+│   │   ├── layout/       MobileQuickNav.jsx · ThemeToggle.tsx
+│   │   ├── barcode/      BarcodeScanner · ScanFeedbackOverlay · ScannerMiniCart
+│   │   ├── venta/        BuscadorProducto · CarritoVenta · CobroDialog · MobileCartBar ·
+│   │   │                 ProductoNoEncontradoDialog · ScanBarcodeInput · TicketVenta · AsignarCodigoDialog
+│   │   ├── caja/         AbrirCajaDialog · CierreCajaDialog · TicketViewerDialog
+│   │   ├── productos/    ProductoDialog
+│   │   ├── egresos/      NuevaCompraDialog · NuevoGastoDialog · ProveedoresTab
+│   │   ├── registros/    CortePDF · ResumenFinancieroPDF · PDFStyles
+│   │   ├── dashboard/    StatCard · SuscripcionAviso
+│   │   ├── configuracion/ BaseDatosTab
+│   │   ├── cuenta/       SuscripcionCard
+│   │   └── common/       LoadingState · EmptyState · InlineSyncIndicator · ChartTooltip ·
+│   │                     ActivarSonidoButton · EnMigracion.tsx (SIN USO — eliminar en Fase 6)
+│   └── utils/        audioFeedback · barcodeUtils · currency · dateUtils · deviceId ·
+│                     exportData · folioUtils · legalConfig (.js) · index.ts (createPageUrl)
 │
 ├── supabase/migrations/
-│   ├── 001_initial_schema.sql  20 tablas, índices, extensiones
-│   ├── 002_rls.sql             RLS + helpers SECURITY DEFINER + políticas por negocio
-│   └── 003_functions.sql       crear_negocio_inicial (alta transaccional del tenant)
+│   ├── 001_initial_schema.sql   20 tablas, índices, extensiones (uuid-ossp, pg_trgm)
+│   ├── 002_rls.sql              RLS + helpers SECURITY DEFINER + políticas por negocio
+│   ├── 003_functions.sql        RPC registrar_negocio (alta tenant, SECURITY DEFINER endurecida)
+│   └── 004_storage_realtime.sql Bucket negocio-assets + políticas + publicación Realtime
 │
-├── docs/                       Documentación viva (este directorio)
-└── extracted/                  Fuente original Base44/Vite (solo referencia, fuera del build)
+└── docs/   ARCHITECTURE · DATABASE · FILE_MAP · DECISIONS · BUGS_PENDING · CHANGELOG · NEXT_STEPS
 ```
 
-## Pendiente de crear (próximas fases)
+## Notas
+- **Páginas** = `.jsx` (no type-checkeadas); **capa de datos / auth / API** = `.ts(x)` tipado.
+- Toda lectura/escritura a Supabase pasa por `src/lib/db/*`. Server-only marcado con `import 'server-only'`.
+- `EnMigracion.tsx` quedó sin uso tras portar todas las páginas (pendiente de borrar).
 
-- **Repositorios** restantes (`src/lib/db/`): `ventas.ts`, `inventario.ts`, `caja.ts`,
-  `egresos.ts`, `reportes.ts`, `suscripcion.ts`.
-- **Hooks** migrados (`src/hooks/`): reemplazar `base44.entities.*` por repositorios.
-- **API Routes** (`app/api/`): `stripe/{checkout,portal,webhook,status,refresh}`, `storage/upload`.
-- **Componentes y páginas** (`src/components/`, `app/(dashboard)/`, `app/vista-cliente/`, `app/suscripcion/`): migración 1:1 con `"use client"`.
-- **Realtime** del escáner (`scan_events`) y carrito.
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

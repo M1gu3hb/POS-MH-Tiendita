@@ -1,8 +1,16 @@
 # DATABASE — POS MH Tiendita
 
-Esquema PostgreSQL en Supabase. Fuente de verdad:
-[`supabase/migrations/001_initial_schema.sql`](../supabase/migrations/001_initial_schema.sql)
-y [`002_rls.sql`](../supabase/migrations/002_rls.sql).
+Esquema PostgreSQL en Supabase (**20 tablas**, proyecto `lisjbutidntalmobgjso`).
+
+## Migraciones (4, aplicadas en la BD — repo == BD)
+| # | Archivo | Contenido |
+|---|---------|-----------|
+| 001 | `001_initial_schema.sql` | 20 tablas + índices + extensiones (`uuid-ossp`, `pg_trgm`) |
+| 002 | `002_rls.sql` | RLS en todas las tablas + helpers `get_negocio_id()`/`get_user_rol()` (SECURITY DEFINER) + políticas por negocio |
+| 003 | `003_functions.sql` | RPC `registrar_negocio(p_auth_user_id, p_nombre_negocio, p_nombre_visible, p_email)` → `json`, SECURITY DEFINER, **EXECUTE solo `service_role`** (alta atómica del tenant) |
+| 004 | `004_storage_realtime.sql` | Bucket público `negocio-assets` + políticas de `storage.objects` + publicación Realtime (`scan_events`, `carrito_items`, `carritos_activos`) |
+
+Además, **triggers de `updated_at`** creados en la BD (actualizan la columna en cada UPDATE).
 
 ## Extensiones
 
@@ -115,5 +123,15 @@ Patrón de políticas:
   ocurren **server-side** con la `service_role` key, que ignora RLS.
 - Restricciones de rol adicionales (más allá de las anteriores) se aplican en las API Routes.
 
-Pendientes relacionados con la BD en [`docs/BUGS_PENDING.md`](./BUGS_PENDING.md)
-(triggers de `updated_at`, lectura de suscripción para cajeros, publicación Realtime).
+## Alta de tenant (RPC)
+
+`registrar_negocio` (migración 003) crea en **una transacción**: `negocios` + `usuarios` (rol `dueno`)
++ `configuracion_negocio` + `suscripciones`, y devuelve `{ negocio_id, usuario_id }`. La invoca
+`POST /api/negocio/register` con la **service role key** (es la única que puede ejecutarla tras el hardening).
+
+## Estado / pendientes
+- **Hechos:** triggers `updated_at` ✓ · publicación Realtime ✓ · bucket `negocio-assets` ✓ · RPC endurecida ✓.
+- **Pendiente (ver [`docs/BUGS_PENDING.md`](./BUGS_PENDING.md)):** lectura de `suscripciones` para cajeros
+  (hoy solo `dueno`); acotar escritura del bucket por carpeta `negocio_id/`; auditoría server-side de cancelaciones.
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

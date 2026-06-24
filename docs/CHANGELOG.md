@@ -4,6 +4,44 @@ Formato: cada entrada con fecha y los cambios significativos de la fase.
 
 ---
 
+## 2026-06-24 — Cierre de sesión: BD real conectada, fix de registro, hardening y prueba de venta
+
+### Infra / Git
+- `git init` + primer push a GitHub (`M1gu3hb/POS-MH-Tiendita`). 3 commits en `main`:
+  `49092a1` migración · `868650d` fix RPC · `c179368` hardening + bucket + realtime + prueba.
+- **`.env.local`** creado con las claves reales de Supabase (gitignored, nunca commiteado).
+- **`npm run dev` verificado:** arranca (Ready ~15s), carga `.env.local`, sin errores; solo 2
+  warnings benignos de caché de webpack. `/login` 200, `/` → 307 a `/login`, `/api/stripe/status` 401.
+
+### Fix de registro (RPC) — daba 500
+- La ruta llamaba a `crear_negocio_inicial`, pero la BD tiene
+  `registrar_negocio(p_auth_user_id, p_nombre_negocio, p_nombre_visible, p_email)` (returns `json`).
+- Corregido `app/api/negocio/register/route.ts`: llama a `registrar_negocio` con los 4 parámetros y
+  lee `{ negocio_id, usuario_id }`. `003_functions.sql` alineado al nombre/firma reales (repo == BD).
+
+### Seguridad — hardening del RPC (BD + `003_functions.sql`)
+- `registrar_negocio`: `set search_path = public` + `revoke execute from anon, authenticated, public`
+  + `grant execute to service_role`. Antes era `SECURITY DEFINER` ejecutable por `anon` (riesgo:
+  crear negocios/usuarios con la anon key saltándose la API route). El route sigue funcionando (service role).
+
+### Storage + Realtime (BD + nueva migración `004_storage_realtime.sql`)
+- Bucket público **`negocio-assets`** + 3 políticas en `storage.objects` (lectura pública, escritura
+  `authenticated`) — habilita la subida de logo.
+- **Realtime activado**: `scan_events`, `carrito_items`, `carritos_activos` añadidas a `supabase_realtime`.
+
+### Verificación funcional contra la BD real
+- **Registro end-to-end:** crea negocio + usuario (dueño) + config + suscripción; login con JWT OK.
+- **Flujo de venta completo** (como usuario autenticado, bajo RLS real): 2 productos → abrir caja →
+  venta efectivo $90 → detalle (2 renglones) → stock 10→8 y 5→4 + kardex → cerrar caja (diferencia $0).
+  **Todos los pasos ✓.** Datos de prueba eliminados al terminar.
+- **Migraciones aplicadas en Supabase: 001, 002, 003, 004.** Triggers de `updated_at` creados.
+
+### Bugs de UI detectados (ver `docs/BUGS_PENDING.md`)
+- Registro no auto-redirige al dashboard · ProductoDialog sin categorías no guía a crear una ·
+  navegación lenta en primera carga (Next dev) · scrollbar del sidebar visible en resoluciones menores.
+
+---
+
 ## 2026-06-24 — Fase 5 completa: todas las páginas migradas
 
 Todas las páginas se portaron 1:1 a `.jsx` sobre los repositorios/hooks (sin Base44,
@@ -120,3 +158,5 @@ sin react-router). Build verde: **24 rutas** (17 páginas + 7 API), `tsc` y `nex
 - Helpers RLS `SECURITY DEFINER` para evitar recursión en políticas de `usuarios`.
 - `audit_log` de solo lectura para clientes; escrituras solo con service role.
 - `react-router-dom` retirado; ruteo vía App Router (`next/navigation`).
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

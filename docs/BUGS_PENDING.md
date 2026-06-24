@@ -5,6 +5,29 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
 
 ---
 
+## UI / UX (detectado en prueba manual — 2026-06-24)
+
+- [ ] **El registro exitoso no redirige automáticamente al dashboard** _(prueba UI)_
+  Tras crear la cuenta hay que ir a `/login` manualmente. La página `register` llama a
+  `signInWithPassword` y luego `router.replace('/')`, pero el redirect no ocurre de forma fiable
+  (probable timing: la cookie de sesión aún no está disponible al navegar). **Acción:** esperar a
+  que `onAuthStateChange`/`getUser` confirme sesión antes de `router.replace('/')`, o usar
+  `router.refresh()` tras el sign-in. (Solo `app/(auth)/register/page.tsx`.)
+
+- [ ] **ProductoDialog: sin categorías no guía a crear una** _(prueba UI)_
+  Cuando el negocio no tiene categorías, el `Select` de categoría queda vacío sin call-to-action.
+  **Acción:** mostrar un estado vacío con enlace/atajo a crear categoría, o permitir crear categoría inline.
+
+- [ ] **Navegación lenta en la primera carga de cada sección** _(prueba UI)_
+  Es la **compilación bajo demanda de Next.js en `dev`** (cada ruta compila al primer acceso).
+  No ocurre en `next build`/producción. **Acción:** ninguna en dev; validar tiempos en build de prod.
+
+- [ ] **Scrollbar visible en el sidebar en resoluciones menores** _(prueba UI)_
+  El `nav` del sidebar (`overflow-y-auto`) muestra scrollbar aunque no haga falta.
+  **Acción:** ajustar estilos (p.ej. `scrollbar-gutter`/ocultar scrollbar) en `app/(dashboard)/layout.tsx`.
+
+---
+
 ## Base de datos / RLS
 
 - [ ] **Triggers de `updated_at`** _(detectado Fase 1)_
@@ -22,11 +45,9 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   **Acción:** o bien añadir una política de SELECT para miembros, o exponer el estado
   de suscripción vía una API Route server-side (decidir en Fase 4). Documentar en SECURITY.md.
 
-- [ ] **Publicación Realtime** _(detectado Fase 1)_
-  El sync escáner↔POS (sección 8) usa `postgres_changes` sobre `scan_events` (y el
-  carrito sobre `carrito_items`). Hay que añadir esas tablas a la publicación
-  `supabase_realtime` (`alter publication supabase_realtime add table scan_events, carrito_items, carritos_activos;`).
-  **Acción:** migración de Realtime o configuración en el panel (Fase 5/8).
+- [x] **Publicación Realtime** _(RESUELTO 2026-06-24, migración 004)_
+  `scan_events`, `carrito_items` y `carritos_activos` añadidas a `supabase_realtime` (BD + `004_storage_realtime.sql`).
+  Nota: `Venta` aún consume scan_events por **polling** (1.5s); falta migrar a suscripción Realtime pura (ver Frontend/shell).
 
 - [ ] **Verificación de correo en el registro** _(detectado Fase 2)_
   `/api/negocio/register` crea el usuario con `email_confirm: true` (sin verificación de email)
@@ -82,9 +103,13 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
 
 ## Infra / despliegue
 
-- [ ] **Bucket de Storage `negocio-assets`** _(Fase 4)_
-  `/api/storage/upload` requiere un bucket público `negocio-assets` en Supabase Storage.
-  **Acción:** crearlo (panel o migración de storage) y definir políticas por carpeta `negocio_id/`.
+- [x] **Bucket de Storage `negocio-assets`** _(RESUELTO 2026-06-24, migración 004)_
+  Bucket público creado + políticas en `storage.objects` (lectura pública, escritura `authenticated`).
+  Pendiente menor: acotar escritura por carpeta `negocio_id/` (hoy cualquier autenticado puede escribir en el bucket).
+
+- [x] **Registro funcional** _(RESUELTO 2026-06-24)_
+  Se corrigió la llamada al RPC (`crear_negocio_inicial` → `registrar_negocio` con 4 params) y se endureció
+  la función. Registro + login + flujo de venta verificados contra la BD real.
 
 ## Frontend / migración de código
 
@@ -105,3 +130,5 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   no usarse, proponer su retiro (`react-quill`/`react-leaflet` además requieren
   cuidado de SSR en Next).
   **Acción:** auditar con la migración de páginas; anotar hallazgos aquí.
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

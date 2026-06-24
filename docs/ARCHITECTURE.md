@@ -48,8 +48,9 @@ Diagrama de capas y flujo de datos del proyecto migrado.
    `onAuthStateChange`, expone el `authUser` de Supabase y carga el perfil de negocio
    (`usuarios`: `negocio_id`, `rol`, `nombre_visible`).
 3. **Registro** (`/register` → `POST /api/negocio/register`): el cliente admin crea el
-   usuario de auth (confirmado) y la RPC `crear_negocio_inicial` inserta, en una
-   transacción, `negocios` + `usuarios` (dueño) + `configuracion_negocio` + `suscripciones`.
+   usuario de auth (confirmado) y la RPC `registrar_negocio` (SECURITY DEFINER, `EXECUTE`
+   solo para `service_role`) inserta, en una transacción, `negocios` + `usuarios` (dueño) +
+   `configuracion_negocio` + `suscripciones`, y devuelve `{ negocio_id, usuario_id }`.
 4. **Login**: `signInWithPassword` o `signInWithMagicLink` (OTP por correo).
 
 ## Multi-tenancy
@@ -66,7 +67,7 @@ Diagrama de capas y flujo de datos del proyecto migrado.
 | Estado de servidor (datos) | TanStack Query v5 + repositorios `src/lib/db/*` |
 | Sesión / auth | Supabase Auth + `AuthContext` + cookies (vía `@supabase/ssr`) |
 | Preferencias de UI (tema, sonido) | `localStorage` (prefijo `pos-mh-`) — nunca datos de negocio |
-| Realtime escáner↔POS | Supabase Realtime (`scan_events`), fallback `BroadcastChannel` (Fase 8) |
+| Realtime escáner↔POS | Supabase Realtime **activo** (`scan_events`, `carrito_items`, `carritos_activos`); `Venta` hoy lo consume por polling 1.5s, fallback `BroadcastChannel` |
 
 ## Convenciones
 
@@ -74,4 +75,17 @@ Diagrama de capas y flujo de datos del proyecto migrado.
 - Código server-only (`supabase-server.ts`, `audit.ts`) marcado con `import 'server-only'`.
 - Sin `any`: tipos de dominio en `src/lib/db/types.ts`, resultados vía `.returns<T>()`.
 
+## Estado de despliegue (2026-06-24)
+
+- **Supabase conectado** (proyecto `lisjbutidntalmobgjso`); `.env.local` con claves reales.
+- **4 migraciones aplicadas:** `001_initial_schema`, `002_rls`, `003_functions` (RPC `registrar_negocio`
+  endurecida), `004_storage_realtime`. Triggers de `updated_at` creados.
+- **Storage:** bucket público `negocio-assets` (+ políticas) listo para logos/imágenes.
+- **Realtime:** publicación `supabase_realtime` incluye `scan_events`, `carrito_items`, `carritos_activos`.
+- **Verificado contra BD real:** registro + login y el flujo de venta completo (productos → caja →
+  venta efectivo → stock → cierre).
+- **GitHub:** `M1gu3hb/POS-MH-Tiendita`, rama `main`.
+
 Resumen de alto nivel para lectura rápida: [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->

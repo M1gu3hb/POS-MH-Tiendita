@@ -51,8 +51,22 @@ vivo a la persona que compra.
 - Toda venta cancelada genera un registro en `audit_log`.
 - No se usa `localStorage` para estado de negocio (solo preferencias de UI).
 
-## Estado actual
+## Estado actual (2026-06-24)
 
-Ver `docs/CHANGELOG.md` para el avance por fase y `docs/NEXT_STEPS.md` para lo que sigue.
+🟢 **Migración completa y funcionando contra la BD real.**
+
+- **Código migrado 100%**: 17 páginas + ~30 componentes sobre la capa de datos (`src/lib/db/*`) y hooks.
+  Cero `@base44/sdk` / `react-router`. `tsc`, `next build` y `npm run dev` en verde.
+- **Supabase conectado** (proyecto `lisjbutidntalmobgjso`): **4 migraciones aplicadas**
+  (`001`–`004`), triggers de `updated_at`, Realtime activo (`scan_events`, `carrito_items`,
+  `carritos_activos`) y bucket público `negocio-assets`. `.env.local` con claves reales (gitignored).
+- **Verificado en producción (BD real):** registro + login y el **flujo de venta completo**
+  (crear productos → abrir caja → venta en efectivo → descuento de stock + kardex → cierre de caja).
+- **GitHub:** `M1gu3hb/POS-MH-Tiendita`, rama `main` (3 commits).
+- **Pendiente:** pulir 4 bugs de UX, probar el resto de flujos en navegador, Stripe (cobro) y
+  limpieza Fase 6. Detalle en `docs/NEXT_STEPS.md` y `docs/BUGS_PENDING.md`; historial en `docs/CHANGELOG.md`.
+
 La fuente original (Base44/Vite) se conserva en `extracted/` como referencia de solo
-lectura durante la migración (excluida del build y de git).
+lectura (excluida del build y de git).
+
+<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->
