@@ -43,7 +43,8 @@ export default function RegisterPage() {
         return;
       }
 
-      // Iniciar sesión automáticamente tras el alta.
+      // Iniciar sesión automáticamente tras el alta. Esperamos a que
+      // signInWithPassword resuelva (la cookie de sesión ya queda escrita).
       const { error } = await signInWithPassword(email, password);
       if (error) {
         toast.success('Cuenta creada', { description: 'Inicia sesión para continuar.' });
@@ -51,6 +52,11 @@ export default function RegisterPage() {
         return;
       }
       toast.success('¡Negocio creado!', { description: 'Bienvenido a tu punto de venta.' });
+      // router.refresh() invalida el Router Cache de Next: descarta la RSC de '/'
+      // que se prefetcheó estando deslogueado (un redirect a /login del middleware),
+      // de modo que la navegación pida '/' de nuevo al servidor ya con la sesión.
+      // Sin esto el dashboard rebota a /login pese al sign-in correcto.
+      router.refresh();
       router.replace('/');
     } catch {
       toast.error('Error de red', { description: 'Inténtalo de nuevo.' });

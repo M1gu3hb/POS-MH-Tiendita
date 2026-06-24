@@ -7,24 +7,28 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
 
 ## UI / UX (detectado en prueba manual — 2026-06-24)
 
-- [ ] **El registro exitoso no redirige automáticamente al dashboard** _(prueba UI)_
+- [x] **El registro exitoso no redirige automáticamente al dashboard** _(RESUELTO 2026-06-24)_
   Tras crear la cuenta hay que ir a `/login` manualmente. La página `register` llama a
   `signInWithPassword` y luego `router.replace('/')`, pero el redirect no ocurre de forma fiable
-  (probable timing: la cookie de sesión aún no está disponible al navegar). **Acción:** esperar a
-  que `onAuthStateChange`/`getUser` confirme sesión antes de `router.replace('/')`, o usar
-  `router.refresh()` tras el sign-in. (Solo `app/(auth)/register/page.tsx`.)
+  (timing: Next prefetchea la RSC de `/` estando deslogueado → sirve el redirect cacheado a `/login`).
+  **Fix aplicado:** tras `await signInWithPassword`, se llama `router.refresh()` (invalida el Router
+  Cache) antes de `router.replace('/')`. Solo `app/(auth)/register/page.tsx`.
 
-- [ ] **ProductoDialog: sin categorías no guía a crear una** _(prueba UI)_
+- [x] **ProductoDialog: sin categorías no guía a crear una** _(RESUELTO 2026-06-24)_
   Cuando el negocio no tiene categorías, el `Select` de categoría queda vacío sin call-to-action.
-  **Acción:** mostrar un estado vacío con enlace/atajo a crear categoría, o permitir crear categoría inline.
+  **Fix aplicado:** con la lista vacía el select muestra "No hay categorías — crea una primero" y
+  debajo un botón "+ Nueva categoría" que abre un diálogo inline (nombre + 5 colores predefinidos).
+  Al guardar usa `createCategoria` (ya existente en `src/lib/db/categorias.ts`), invalida el query
+  `['categorias', negocioId]` y auto-selecciona la nueva. Solo `ProductoDialog.jsx`.
 
 - [ ] **Navegación lenta en la primera carga de cada sección** _(prueba UI)_
   Es la **compilación bajo demanda de Next.js en `dev`** (cada ruta compila al primer acceso).
   No ocurre en `next build`/producción. **Acción:** ninguna en dev; validar tiempos en build de prod.
 
-- [ ] **Scrollbar visible en el sidebar en resoluciones menores** _(prueba UI)_
+- [x] **Scrollbar visible en el sidebar en resoluciones menores** _(RESUELTO 2026-06-24)_
   El `nav` del sidebar (`overflow-y-auto`) muestra scrollbar aunque no haga falta.
-  **Acción:** ajustar estilos (p.ej. `scrollbar-gutter`/ocultar scrollbar) en `app/(dashboard)/layout.tsx`.
+  **Fix aplicado:** nueva utilidad `.scrollbar-hide` en `app/globals.css` (`scrollbar-width: none` +
+  `::-webkit-scrollbar { display: none }`) aplicada al `<nav>` del sidebar en `app/(dashboard)/layout.tsx`.
 
 ---
 

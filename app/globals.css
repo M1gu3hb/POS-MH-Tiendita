@@ -4,6 +4,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  /* Oculta la scrollbar conservando el scroll (sidebar en resoluciones menores). BUG 3. */
+  .scrollbar-hide {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / Edge legacy */
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none; /* Chrome / Safari / Edge */
+  }
+}
+
 @layer base {
   :root {
     --font-inter: 'Inter', sans-serif;

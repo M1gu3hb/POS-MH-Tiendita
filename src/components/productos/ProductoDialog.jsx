@@ -1,15 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ScanLine, AlertCircle } from 'lucide-react';
+import { ScanLine, AlertCircle, Plus } from 'lucide-react';
 import BarcodeScanner from '@/components/barcode/BarcodeScanner';
 import { useProductoLookup } from '@/hooks/useProductoLookup';
+import { createCategoria } from '@/lib/db/categorias';
 import { toast } from 'sonner';
 import { normalizeBarcode, isSuspiciousBarcode } from '@/utils/barcodeUtils';
 import { playScanSuccess } from '@/utils/audioFeedback';
@@ -17,6 +20,9 @@ import { playScanSuccess } from '@/utils/audioFeedback';
 // Migrado: usa categoria_id / proveedor_id (esquema normalizado) en vez de los
 // campos denormalizados categoria_nombre / proveedor_nombre de Base44.
 const UNIDADES = ['pieza', 'caja', 'paquete', 'kg', 'gramos', 'litro', 'mililitro', 'metro', 'otro'];
+
+// Colores predefinidos para el alta rápida de categoría (BUG 2).
+const CATEGORIA_COLORES = ['#ef4444', '#f59e0b', '#10b981', '#2563eb', '#8b5cf6'];
 
 const EMPTY = {
   nombre: '', categoria_id: '', marca: '', sku: '', codigo_barras: '',
@@ -26,9 +32,16 @@ const EMPTY = {
 
 export default function ProductoDialog({ open, onClose, onSave, producto, categorias = [], proveedores = [], loading, codigoInicial = '' }) {
   const { checkDuplicado } = useProductoLookup();
+  const { negocioId } = useAuth();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState(EMPTY);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [validating, setValidating] = useState(false);
+  // Alta rápida de categoría desde el diálogo de producto (BUG 2).
+  const [catDialogOpen, setCatDialogOpen] = useState(false);
+  const [newCatNombre, setNewCatNombre] = useState('');
+  const [newCatColor, setNewCatColor] = useState(CATEGORIA_COLORES[0]);
+  const [savingCat, setSavingCat] = useState(false);
 
   useEffect(() => {
     if (producto) {
@@ -94,12 +107,34 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
     toast.success('Código agregado al producto');
   };
 
+  const handleCreateCategoria = async () => {
+    const nombre = newCatNombre.trim();
+    if (!nombre || !negocioId) return;
+    setSavingCat(true);
+    try {
+      const nueva = await createCategoria({ negocio_id: negocioId, nombre, color: newCatColor });
+      // Refrescar la lista de categorías que alimenta este select (query del padre).
+      await queryClient.invalidateQueries({ queryKey: ['categorias', negocioId] });
+      // Seleccionar automáticamente la categoría recién creada.
+      setForm((f) => ({ ...f, categoria_id: nueva.id }));
+      toast.success(`Categoría "${nombre}" creada`);
+      setNewCatNombre('');
+      setNewCatColor(CATEGORIA_COLORES[0]);
+      setCatDialogOpen(false);
+    } catch (err) {
+      toast.error('No se pudo crear la categoría', { description: err?.message });
+    } finally {
+      setSavingCat(false);
+    }
+  };
+
   const utilidad = (parseFloat(form.precio_venta) || 0) - (parseFloat(form.costo_unitario) || 0);
   const margen = (parseFloat(form.precio_venta) || 0) > 0 ? (utilidad / parseFloat(form.precio_venta)) * 100 : 0;
 
   const handleDialogOpenChange = (nextOpen) => {
     if (nextOpen) return;
     if (scannerOpen) return;
+    if (catDialogOpen) return;
     onClose();
   };
 
@@ -121,9 +156,24 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
                 <Select value={form.categoria_id} onValueChange={(v) => setForm({ ...form, categoria_id: v })}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                   <SelectContent>
-                    {categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                    {categorias.length === 0 ? (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        No hay categorías — crea una primero
+                      </div>
+                    ) : (
+                      categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)
+                    )}
                   </SelectContent>
                 </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCatDialogOpen(true)}
+                  className="mt-1 h-7 px-2 text-xs text-primary"
+                >
+                  <Plus className="h-3 w-3 mr-1" /> Nueva categoría
+                </Button>
               </div>
               <div>
                 <Label>Marca</Label>
@@ -227,6 +277,48 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
         minStableScans={3}
         mode="product"
       />
+
+      <Dialog open={catDialogOpen} onOpenChange={(o) => { if (!o) setCatDialogOpen(false); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Nueva categoría</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div>
+              <Label>Nombre *</Label>
+              <Input
+                value={newCatNombre}
+                onChange={(e) => setNewCatNombre(e.target.value)}
+                placeholder="Bebidas, Botanas, Limpieza…"
+                className="mt-1"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategoria(); } }}
+              />
+            </div>
+            <div>
+              <Label>Color</Label>
+              <div className="flex gap-2 mt-1">
+                {CATEGORIA_COLORES.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => setNewCatColor(color)}
+                    className={`h-7 w-7 rounded-full border-2 transition ${newCatColor === color ? 'border-foreground scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: color }}
+                    aria-label={`Color ${color}`}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setCatDialogOpen(false)}>Cancelar</Button>
+            <Button type="button" onClick={handleCreateCategoria} disabled={!newCatNombre.trim() || savingCat} className="bg-primary">
+              {savingCat ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
