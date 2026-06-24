@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/db/supabase-server';
  * POST /api/negocio/register
  *
  * Alta self-service: crea el usuario de Supabase Auth (confirmado) y, en una
- * transacción (RPC `crear_negocio_inicial`), el negocio + usuario dueño +
+ * transacción (RPC `registrar_negocio`), el negocio + usuario dueño +
  * configuración + suscripción inicial. Si la transacción falla, se revierte el
  * usuario de auth (acción compensatoria).
  *
@@ -49,11 +49,13 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const authUserId = created.user.id;
 
-  // 2) Crear el tenant completo en una transacción.
-  const { data: negocioId, error: rpcError } = await admin.rpc('crear_negocio_inicial', {
+  // 2) Crear el tenant completo en una transacción (RPC `registrar_negocio`,
+  //    SECURITY DEFINER). Devuelve { negocio_id, usuario_id }.
+  const { data: result, error: rpcError } = await admin.rpc('registrar_negocio', {
     p_auth_user_id: authUserId,
     p_nombre_negocio: nombre_negocio,
     p_nombre_visible: nombre_visible,
+    p_email: email,
   });
 
   if (rpcError) {
@@ -62,5 +64,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
 
+  const negocioId = (result as { negocio_id?: string } | null)?.negocio_id ?? null;
   return NextResponse.json({ success: true, negocio_id: negocioId });
 }
