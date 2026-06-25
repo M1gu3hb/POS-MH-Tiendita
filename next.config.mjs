@@ -2,9 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    // Supabase Storage public URLs (logos, imágenes de producto).
-    // Ajusta el hostname al de tu proyecto si usas un dominio personalizado.
+    // Supabase Storage public URLs (logos and product images).
     remotePatterns: [
+      { protocol: 'https', hostname: 'lisjbutidntalmobgjso.supabase.co' },
       { protocol: 'https', hostname: '*.supabase.co' },
       { protocol: 'https', hostname: '*.supabase.in' },
     ],
