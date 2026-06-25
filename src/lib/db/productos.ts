@@ -163,3 +163,35 @@ export async function getProductosStockBajo(negocioId: string): Promise<Producto
   return lowStock;
 }
 
+export interface HistorialPrecio {
+  id: string;
+  negocio_id: string;
+  producto_id: string;
+  precio_venta_anterior: number;
+  precio_venta_nuevo: number;
+  costo_anterior: number;
+  costo_nuevo: number;
+  usuario_id: string | null;
+  usuario_nombre: string | null;
+  motivo: string | null;
+  created_at: string;
+}
+
+export async function getHistorialPrecios(
+  productoId: string,
+  negocioId: string,
+): Promise<HistorialPrecio[]> {
+  const { data, error } = await supabase
+    .from('historial_precios')
+    .select('*')
+    .eq('producto_id', productoId)
+    .eq('negocio_id', negocioId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+    .returns<HistorialPrecio[]>();
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+

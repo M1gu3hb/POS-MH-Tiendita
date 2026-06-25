@@ -1,6 +1,6 @@
 # AUDIT_LOG — Registro de reportes auditados
 
-Control interno del auditor técnico. **Último reporte auditado: #009.**
+Control interno del auditor técnico. **Último reporte auditado: #012.**
 Nunca se re-audita un reporte ya listado aquí.
 
 | # | Fecha | IA | Tarea | Veredicto | Notas |
@@ -14,5 +14,8 @@ Nunca se re-audita un reporte ya listado aquí.
 | 007 | 2026-06-24 | claude-code | escaner-realtime | ✅ Conforme | Polling→Realtime puro vía `subscribeScanEvents` en `scan.ts` (sin Supabase directo en page — verificado). `dev:stable` añadido. **Reparó import roto de `cf9d03c`.** Bugs nuevos: stale closure mayoreo (HIGH preexistente), errores silenciados (LOW). Solo build. |
 | 008 | 2026-06-24 | codex | imagen-producto-stock-alert | ✅ Conforme | Upload de imagen en ProductoDialog (galería+cámara, JPG/PNG/WebP ≤2MB) vía `/api/storage/upload` (no Supabase directo); validación MIME server-side (verificado E2E, rechaza 415). Alerta de stock bajo post-venta. Bugs ya conocidos (npm audit). |
 | 009 | 2026-06-24 | antigravity | top-productos-mayoreo | ✅ Conforme (con incidente) | Top 5 productos (`getTopProductos`, agregación en memoria) + mayoreo automático con badge. DB vía capa de datos (sin Supabase directo — verificado). **Su commit `cf9d03c` rompió el build del remoto** (import sin helper); reparado por #007. Mayoreo sin datos reales para probar. Mató proceso `next dev` fantasma del usuario. |
+| 010 | 2026-06-25 | claude-code | whatsapp-ticket | ✅ Conforme | PASO 0: auditó #007, confirmó `subscribeScanEvents` reparado. `whatsapp.ts` (pura) + botón WhatsApp en `venta/page.jsx`. Sin Supabase directo (verificado). Bug: ticket muestra 'Mi Tienda' (no nombre real). `TicketVenta.jsx` en su scope pero NO lo editó. Solo build. |
+| 011 | 2026-06-25 | codex | qr-configuracion-ticket | ⚠️ Conforme pero migración sin aplicar | PASO 0: auditó #008, sin bugs. QR en config (150×150) y ticket (80×80) + `qr_url` en `configuracion.ts`. Sin Supabase directo (verificado). **🔴 `007_qr_url.sql` NO aplicada a la BD (verificado vía `list_migrations`)** → feature no funcional + repo≠BD. Editó `TicketVenta.jsx` (también asignado a #010). |
+| 012 | 2026-06-25 | antigravity | resumen-dia-proveedor | ✅ Conforme | PASO 0: auditó #009, sin bugs. `getResumenHoy` + `getProductosStockBajo` (capa de datos) + Dashboard (resumen del día rol dueño, banner proveedor stock bajo). Sin Supabase directo (verificado). Se mantuvo en sus 3 archivos. Solo build. |
 
 <!-- Última actualización: 2026-06-24 -->

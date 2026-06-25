@@ -228,4 +228,40 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   el helper existe y el import resuelve; `tsc`/`build` en verde). **Riesgo de proceso:** agentes
   concurrentes editando el mismo archivo. **Acción:** serializar tareas que tocan `venta/page.jsx`.
 
-<!-- Última actualización: 2026-06-24 — Auditoría de reportes colaboradores 007–009 -->
+## Detectados en reportes colaboradores 010–012 (2026-06-25)
+
+### 🔴 IMPORTANTE — Migración `007_qr_url` sin aplicar (repo ≠ BD)
+- [ ] **`007_qr_url.sql` no está aplicada a la BD real** _(reporte 011, codex — verificado por auditoría)_
+  El código ya referencia `config.qr_url` (`src/lib/db/configuracion.ts`, `configuracion/page.jsx`,
+  `TicketVenta.jsx`), pero la columna `configuracion_negocio.qr_url` **no existe en la BD**
+  (`list_migrations` muestra solo 001–006; el reporte confirma error `42703`). Efecto: **guardar la URL
+  del QR fallará en runtime** (`updateConfiguracion` con `qr_url` → `42703`) y el QR no se renderiza
+  (lectura `select('*')` no trae la columna → `qr_url` undefined, degradación elegante). La feature de
+  QR queda **no funcional** hasta aplicar la migración. **Acción:** aplicar `007_qr_url.sql` a
+  `lisjbutidntalmobgjso` (SQL Editor) y reconfirmar repo == BD.
+
+### Tickets / WhatsApp (reporte 010 — claude-code)
+- [ ] **El ticket de WhatsApp muestra 'Mi Tienda' en vez del nombre real** _(reporte 010)_
+  `generarMensajeTicket` usa `config.nombre`, que no existe en `configuracion_negocio` (el nombre vive
+  en `negocios.nombre`), así que cae al fallback 'Mi Tienda'. Es la misma limitación que ya tiene
+  `TicketVenta.jsx` (`config?.nombre_negocio`). **Acción:** pasar `negocio.nombre` (vía `useNegocio`,
+  ya existente desde el reporte 006) a `generarMensajeTicket` en una tarea con acceso a esos archivos.
+
+### Dependencias / entorno (reportes 011, 012)
+- [ ] **`npm install`/`audit` reporta 7 vulnerabilidades (3 moderadas, 4 altas)** _(reporte 011)_
+  Consistente con el ítem de `npm audit` del reporte 003. Tras añadir `qrcode`/`@types/qrcode`.
+  **Acción:** evaluar upgrades en Fase 6 (ya registrado).
+- [ ] **Bloqueos de `.next/` por procesos colgados (recurrente)** _(reportes 012, ya en 008/009)_
+  Reaparecen `ENOENT`/`rename ... 500.html` en `next build` por handles de Webpack/Next en caché;
+  se resuelve borrando `.next/` antes de compilar. No es bug de código. **Acción:** limpiar `.next/`
+  y cerrar `next dev` colgados antes de builds de prod.
+
+### 🟠 Coordinación multi-agente (reportes 010 y 011)
+- [ ] **`TicketVenta.jsx` asignado a DOS agentes concurrentes** _(auditoría 010/011)_
+  `src/components/venta/TicketVenta.jsx` estaba en la lista de archivos permitidos del reporte 010
+  (WhatsApp) **y** fue editado por el reporte 011 (QR), ambos en paralelo. No hubo conflicto de merge
+  **solo porque 010 decidió no editarlo**. Riesgo de proceso: el director asignó el mismo archivo a dos
+  tareas simultáneas. **Acción:** evitar solapar archivos entre tareas concurrentes; serializar las que
+  toquen `TicketVenta.jsx` o `venta/page.jsx`.
+
+<!-- Última actualización: 2026-06-25 — Auditoría de reportes colaboradores 010–012 -->

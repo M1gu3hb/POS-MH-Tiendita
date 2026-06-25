@@ -4,6 +4,34 @@ Formato: cada entrada con fecha y los cambios significativos de la fase.
 
 ---
 
+## 2026-06-25 — Features colaboradores (reportes #010–#012) — auditado
+
+Tres tareas de feature concurrentes. `tsc`/`next build` en verde; sin Supabase directo en componentes
+(verificado). Cada agente auditó su propio reporte previo (010→007, 011→008, 012→009) sin hallazgos.
+
+- **#010 (claude-code) — Compartir ticket por WhatsApp.** Nuevo `src/utils/whatsapp.ts` con
+  `generarMensajeTicket(venta, items, config)` (función pura, texto plano con emojis 🛒📋💰: negocio,
+  folio, fecha, productos, total, método de pago, cambio, agradecimiento). En `venta/page.jsx`, botón
+  "WhatsApp" junto a "Imprimir" dentro del modal de ticket (solo tras venta completada); abre
+  `wa.me/?text=...`. `TicketVenta.jsx` no se modificó (ya exponía los props necesarios).
+- **#011 (codex) — QR del negocio en configuración y ticket.** `configuracion/page.jsx`: sección
+  "Código QR del negocio" con campo URL + generación frontend (`QRCode.toDataURL()`, 150×150).
+  `TicketVenta.jsx`: renderiza QR 80×80 al final del ticket si existe `config.qr_url`. Soporte de
+  `qr_url` en `src/lib/db/configuracion.ts`. Deps `qrcode`/`@types/qrcode`. Migración
+  `007_qr_url.sql` creada **pero NO aplicada a la BD** → feature no funcional hasta aplicarla
+  (ver `BUGS_PENDING.md`).
+- **#012 (antigravity) — Corte rápido del día + recordatorio a proveedor.** `getResumenHoy(negocioId)`
+  en `ventas.ts` (ventas `pagada` desde medianoche). Dashboard: botón "📊 Resumen de hoy" (solo rol
+  `dueno`) → Dialog con total, nº tickets, utilidad bruta y desglose de pagos.
+  `getProductosStockBajo(negocioId)` en `productos.ts` (left join a `proveedores`); banner expandible
+  arriba de las StatCards cuando un proveedor tiene ≥ 3 productos en stock bajo.
+
+> Nota de auditoría: `007_qr_url` sin aplicar (repo ≠ BD); el ticket de WhatsApp muestra 'Mi Tienda'
+> (no el nombre real). `TicketVenta.jsx` estuvo asignado a #010 y #011 a la vez (conflicto evitado solo
+> porque #010 no lo editó). Verificación a nivel build; falta runtime (QR, WhatsApp, resumen del día).
+
+---
+
 ## 2026-06-24 — Features colaboradores (reportes #007–#009) — auditado
 
 Tres tareas de feature de agentes concurrentes. Build final en verde (`tsc`/`next build` exit 0);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { ScanLine, AlertCircle, Plus, Upload, Camera, X, Loader2 } from 'lucide-
 import BarcodeScanner from '@/components/barcode/BarcodeScanner';
 import { useProductoLookup } from '@/hooks/useProductoLookup';
 import { createCategoria } from '@/lib/db/categorias';
+import { getHistorialPrecios } from '@/lib/db/productos';
 import { toast } from 'sonner';
 import { normalizeBarcode, isSuspiciousBarcode } from '@/utils/barcodeUtils';
 import { playScanSuccess } from '@/utils/audioFeedback';
@@ -36,6 +37,13 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
   const { checkDuplicado } = useProductoLookup();
   const { negocioId } = useAuth();
   const queryClient = useQueryClient();
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const pad = (n) => n.toString().padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [form, setForm] = useState(EMPTY);
@@ -43,11 +51,17 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
   const [validating, setValidating] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageError, setImageError] = useState('');
-  // Alta rápida de categoría desde el diálogo de producto (BUG 2).
   const [catDialogOpen, setCatDialogOpen] = useState(false);
   const [newCatNombre, setNewCatNombre] = useState('');
   const [newCatColor, setNewCatColor] = useState(CATEGORIA_COLORES[0]);
   const [savingCat, setSavingCat] = useState(false);
+  const [historialExpanded, setHistorialExpanded] = useState(false);
+
+  const { data: historial = [], isLoading: historialLoading } = useQuery({
+    queryKey: ['historial-precios', producto?.id, negocioId],
+    queryFn: () => getHistorialPrecios(producto.id, negocioId),
+    enabled: !!producto?.id && !!negocioId && open,
+  });
 
   useEffect(() => {
     if (producto) {
@@ -340,6 +354,53 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
               <Label>Permite venta sin stock</Label>
               <Switch checked={form.permite_venta_sin_stock} onCheckedChange={(v) => setForm({ ...form, permite_venta_sin_stock: v })} />
             </div>
+
+            {producto && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setHistorialExpanded(!historialExpanded)}
+                  className="flex items-center justify-between w-full text-sm font-semibold text-foreground py-2 select-none"
+                >
+                  <span className="flex items-center gap-1.5">📜 Historial de precios</span>
+                  <span className="text-xs text-muted-foreground">{historialExpanded ? 'Ocultar' : 'Mostrar'}</span>
+                </button>
+                {historialExpanded && (
+                  <div className="mt-2">
+                    {historialLoading ? (
+                      <p className="text-xs text-muted-foreground py-2 text-center">Cargando historial...</p>
+                    ) : historial && historial.length > 0 ? (
+                      <div className="overflow-x-auto max-h-40 overflow-y-auto border border-border rounded-lg">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-muted text-muted-foreground sticky top-0">
+                            <tr>
+                              <th className="p-2">Fecha</th>
+                              <th className="p-2 text-right">Precio anterior</th>
+                              <th className="p-2 text-right">Precio nuevo</th>
+                              <th className="p-2 text-right">Costo anterior</th>
+                              <th className="p-2 text-right">Costo nuevo</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {historial.map((h) => (
+                              <tr key={h.id} className="hover:bg-muted/50">
+                                <td className="p-2 whitespace-nowrap">{formatDate(h.created_at)}</td>
+                                <td className="p-2 text-right text-muted-foreground">${Number(h.precio_venta_anterior).toFixed(2)}</td>
+                                <td className="p-2 text-right font-medium text-foreground">${Number(h.precio_venta_nuevo).toFixed(2)}</td>
+                                <td className="p-2 text-right text-muted-foreground">${Number(h.costo_anterior).toFixed(2)}</td>
+                                <td className="p-2 text-right font-medium text-foreground">${Number(h.costo_nuevo).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground py-2 text-center">Sin cambios de precio registrados</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
