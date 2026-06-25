@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ScanLine, AlertCircle, Plus } from 'lucide-react';
+import { ScanLine, AlertCircle, Plus, Upload, Camera, X, Loader2 } from 'lucide-react';
 import BarcodeScanner from '@/components/barcode/BarcodeScanner';
 import { useProductoLookup } from '@/hooks/useProductoLookup';
 import { createCategoria } from '@/lib/db/categorias';
@@ -20,6 +20,8 @@ import { playScanSuccess } from '@/utils/audioFeedback';
 // Migrado: usa categoria_id / proveedor_id (esquema normalizado) en vez de los
 // campos denormalizados categoria_nombre / proveedor_nombre de Base44.
 const UNIDADES = ['pieza', 'caja', 'paquete', 'kg', 'gramos', 'litro', 'mililitro', 'metro', 'otro'];
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 // Colores predefinidos para el alta rápida de categoría (BUG 2).
 const CATEGORIA_COLORES = ['#ef4444', '#f59e0b', '#10b981', '#2563eb', '#8b5cf6'];
@@ -27,16 +29,20 @@ const CATEGORIA_COLORES = ['#ef4444', '#f59e0b', '#10b981', '#2563eb', '#8b5cf6'
 const EMPTY = {
   nombre: '', categoria_id: '', marca: '', sku: '', codigo_barras: '',
   unidad_venta: 'pieza', precio_venta: '', costo_unitario: '', stock_actual: '',
-  stock_minimo: '5', proveedor_id: '', activo: true, permite_venta_sin_stock: false, notas: '',
+  stock_minimo: '5', proveedor_id: '', activo: true, permite_venta_sin_stock: false, notas: '', imagen_url: '',
 };
 
 export default function ProductoDialog({ open, onClose, onSave, producto, categorias = [], proveedores = [], loading, codigoInicial = '' }) {
   const { checkDuplicado } = useProductoLookup();
   const { negocioId } = useAuth();
   const queryClient = useQueryClient();
+  const galleryInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [form, setForm] = useState(EMPTY);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState('');
   // Alta rápida de categoría desde el diálogo de producto (BUG 2).
   const [catDialogOpen, setCatDialogOpen] = useState(false);
   const [newCatNombre, setNewCatNombre] = useState('');
@@ -60,10 +66,12 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
         activo: producto.activo !== false,
         permite_venta_sin_stock: producto.permite_venta_sin_stock || false,
         notas: producto.notas || '',
+        imagen_url: producto.imagen_url || '',
       });
     } else {
       setForm({ ...EMPTY, codigo_barras: codigoInicial || '' });
     }
+    setImageError('');
   }, [producto, open, codigoInicial]);
 
   const handleSave = async () => {
@@ -96,7 +104,46 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
       costo_unitario: parseFloat(form.costo_unitario) || 0,
       stock_actual: parseFloat(form.stock_actual) || 0,
       stock_minimo: parseFloat(form.stock_minimo) || 0,
+      imagen_url: form.imagen_url || null,
     });
+  };
+
+  const handleImageSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!IMAGE_TYPES.includes(file.type)) {
+      const message = 'Formato no permitido. Usa JPG, PNG o WebP.';
+      setImageError(message);
+      toast.error(message);
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      const message = 'La imagen no debe superar 2MB.';
+      setImageError(message);
+      toast.error(message);
+      return;
+    }
+
+    setUploadingImage(true);
+    setImageError('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('folder', 'productos');
+      const res = await fetch('/api/storage/upload', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || 'upload failed');
+      setForm((prev) => ({ ...prev, imagen_url: data.url }));
+      toast.success('Imagen cargada');
+    } catch (err) {
+      const message = err?.message || 'Error al cargar imagen';
+      setImageError(message);
+      toast.error(message);
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleScanDetected = (code) => {
@@ -214,6 +261,41 @@ export default function ProductoDialog({ open, onClose, onSave, producto, catego
                   {UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label>Imagen</Label>
+              <div className="mt-1 flex items-center gap-3">
+                {form.imagen_url && (
+                  <div className="relative h-20 w-20 flex-shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={form.imagen_url} alt={form.nombre || 'Producto'} className="h-20 w-20 rounded-xl object-cover bg-muted border border-border" />
+                    <button
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, imagen_url: '' }))}
+                      className="absolute -right-2 -top-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center shadow"
+                      title="Eliminar imagen"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => galleryInputRef.current?.click()} disabled={uploadingImage} className="h-10">
+                    <Upload className="h-4 w-4 mr-2" /> Subir imagen
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => cameraInputRef.current?.click()} disabled={uploadingImage} className="h-10">
+                    <Camera className="h-4 w-4 mr-2" /> Tomar foto
+                  </Button>
+                </div>
+              </div>
+              {uploadingImage && (
+                <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Subiendo...
+                </p>
+              )}
+              {imageError && <p className="mt-2 text-xs text-destructive">{imageError}</p>}
+              <input ref={galleryInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImageSelected} className="hidden" />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleImageSelected} className="hidden" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

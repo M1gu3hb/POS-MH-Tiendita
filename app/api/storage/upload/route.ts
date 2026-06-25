@@ -12,6 +12,9 @@ import { createServerSupabase } from '@/lib/db/supabase-server';
 
 const BUCKET = 'negocio-assets';
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const PRODUCT_FOLDER = 'productos';
+const PRODUCT_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const PRODUCT_MAX_BYTES = 2 * 1024 * 1024;
 
 export async function POST(request: Request): Promise<NextResponse> {
   const ctx = await getServerAuthContext();
@@ -24,20 +27,27 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'Archivo requerido (campo "file")' }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
+  const folder = form.get('folder');
+  const isProductImage = folder === PRODUCT_FOLDER;
+  if (isProductImage && !PRODUCT_IMAGE_TYPES.includes(file.type)) {
+    return NextResponse.json({ error: 'Formato no permitido. Usa JPG, PNG o WebP.' }, { status: 415 });
+  }
+  if (isProductImage && file.size > PRODUCT_MAX_BYTES) {
+    return NextResponse.json({ error: 'La imagen no debe superar 2MB.' }, { status: 413 });
+  }
+  if (!isProductImage && file.size > MAX_BYTES) {
     return NextResponse.json({ error: 'El archivo supera el límite de 5 MB' }, { status: 413 });
   }
 
   const supabase = createServerSupabase();
   const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
-  // Ruta acotada por negocio: `<negocio_id>/logo.<ext>`. El primer segmento de la
-  // ruta es el negocio_id, que es lo que valida la política de escritura del
-  // bucket (005_storage_policy.sql, (storage.foldername(name))[1] = get_negocio_id()).
-  // Nombre fijo `logo` → upsert para permitir reemplazar el logo existente.
-  const path = `${ctx.negocioId}/logo.${ext}`;
+  // Ruta acotada por negocio: logos usan nombre fijo; productos usan archivo único.
+  const path = isProductImage
+    ? `${ctx.negocioId}/${PRODUCT_FOLDER}/${Date.now()}.${ext}`
+    : `${ctx.negocioId}/logo.${ext}`;
 
   const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
-    upsert: true,
+    upsert: !isProductImage,
     contentType: file.type || undefined,
   });
 
