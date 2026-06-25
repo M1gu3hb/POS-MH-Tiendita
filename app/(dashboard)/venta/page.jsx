@@ -23,7 +23,7 @@ import { resolveProductByBarcode } from '@/lib/productLookup';
 import { formatMoney } from '@/utils/currency';
 import { generateFolio } from '@/utils/folioUtils';
 import { normalizeBarcode } from '@/utils/barcodeUtils';
-import { generarMensajeTicket } from '@/utils/whatsapp';
+import { construirUrlWhatsApp, generarMensajeTicket } from '@/utils/whatsapp';
 import { playScanSuccess, playScanError, playSaleSuccess } from '@/utils/audioFeedback';
 import BuscadorProducto from '@/components/venta/BuscadorProducto';
 import CarritoVenta from '@/components/venta/CarritoVenta';
@@ -75,6 +75,7 @@ export default function VentaPage() {
   const [lastVenta, setLastVenta] = useState(null);
   const [lastDetalles, setLastDetalles] = useState([]);
   const [showTicket, setShowTicket] = useState(false);
+  const [whatsappTelefono, setWhatsappTelefono] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [cierreOpen, setCierreOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -566,13 +567,22 @@ export default function VentaPage() {
     setTimeout(() => { win.print(); win.close(); }, 400);
   };
 
+  const closeTicket = () => {
+    setShowTicket(false);
+    setWhatsappTelefono('');
+  };
+
+  const handleWhatsappTelefonoChange = (event) => {
+    setWhatsappTelefono(event.target.value.replace(/\D/g, '').slice(0, 10));
+  };
+
   // Compartir el ticket de la venta recién completada por WhatsApp.
   // Solo se invoca desde el modal de ticket (que ya requiere una venta completada).
   // wa.me sin número abre el selector de chat: en móvil usa la app, en escritorio WhatsApp Web.
   const shareWhatsApp = () => {
     if (!lastVenta) return;
     const mensaje = generarMensajeTicket(lastVenta, lastDetalles, config, negocio?.nombre);
-    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer');
+    window.open(construirUrlWhatsApp(mensaje, whatsappTelefono), '_blank', 'noopener,noreferrer');
   };
 
   const openVistaCliente = () => {
@@ -755,14 +765,23 @@ export default function VentaPage() {
       <CobroDialog open={cobroOpen} onClose={() => setCobroOpen(false)} total={total} onConfirm={handleCobro} sym={sym} isProcessing={isProcessing} />
 
       {showTicket && lastVenta && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4 no-print" onClick={() => setShowTicket(false)}>
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4 no-print" onClick={closeTicket}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm max-h-[95vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="no-print flex items-center justify-between px-4 py-3 bg-gray-900 text-white flex-shrink-0">
               <h2 className="font-bold text-sm">Ticket — {lastVenta.folio}</h2>
               <div className="flex gap-2">
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={whatsappTelefono}
+                  onChange={handleWhatsappTelefonoChange}
+                  placeholder="Número WhatsApp (opcional)"
+                  className="h-9 w-32 sm:w-44 rounded-md border border-white/20 bg-white px-2 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:ring-2 focus:ring-[#25D366]"
+                />
                 <Button size="sm" onClick={shareWhatsApp} title="Compartir por WhatsApp" className="bg-[#25D366] hover:bg-[#1ebe5d] text-white h-9"><MessageCircle className="h-4 w-4 mr-1" /> WhatsApp</Button>
                 <Button size="sm" onClick={printTicket} className="bg-green-600 hover:bg-green-700 text-white h-9"><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
-                <Button size="sm" onClick={() => setShowTicket(false)} className="bg-gray-700 hover:bg-gray-600 text-white h-9">Cerrar</Button>
+                <Button size="sm" onClick={closeTicket} className="bg-gray-700 hover:bg-gray-600 text-white h-9">Cerrar</Button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto flex justify-center items-start py-6" style={{ background: 'repeating-linear-gradient(135deg, hsl(var(--muted)) 0 8px, hsl(var(--muted)/0.7) 8px 16px)' }}>

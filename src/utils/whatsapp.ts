@@ -83,3 +83,14 @@ export function generarMensajeTicket(
 
   return lineas.join('\n');
 }
+
+export function construirUrlWhatsApp(mensaje: string, telefono?: string | null): string {
+  const telefonoLimpio = (telefono || '').replace(/\D/g, '');
+  const texto = encodeURIComponent(mensaje);
+
+  if (telefonoLimpio.length === 10) {
+    return `https://wa.me/52${telefonoLimpio}?text=${texto}`;
+  }
+
+  return `https://wa.me/?text=${texto}`;
+}
