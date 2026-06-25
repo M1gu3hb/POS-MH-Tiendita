@@ -43,3 +43,27 @@ export async function marcarScanEvent(id: string, estado: ScanEvent['estado'], e
     .eq('id', id);
   if (error) throw error;
 }
+
+/**
+ * Suscripción Realtime pura a los `scan_events` de un corte (evento INSERT).
+ * Reemplaza el polling de 1.5s del POS: el escáner móvil inserta scan_events y
+ * el POS los recibe en tiempo real. Mantiene el acceso a Supabase en la capa de
+ * datos (el componente no importa el cliente directamente). Devuelve una función
+ * para cancelar la suscripción.
+ */
+export function subscribeScanEvents(corteId: string, onInsert: (scan: ScanEvent) => void): () => void {
+  const channel = supabase
+    .channel(`scan_events:${corteId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'scan_events', filter: `corte_id=eq.${corteId}` },
+      (payload) => {
+        onInsert(payload.new as ScanEvent);
+      },
+    )
+    .subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
