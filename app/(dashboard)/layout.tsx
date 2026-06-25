@@ -21,6 +21,7 @@ const navItems = [
   { path: '/venta', label: 'Punto de Venta', icon: ShoppingCart },
   { path: '/escaner', label: 'Escáner', icon: ScanLine },
   { path: '/caja', label: 'Caja', icon: Landmark },
+  { path: '/fiado', label: 'Fiado', icon: CreditCard },
   { path: '/productos', label: 'Productos', icon: Package },
   { path: '/inventario', label: 'Inventario', icon: Warehouse },
   { path: '/egresos', label: 'Compras y Gastos', icon: ShoppingBag },

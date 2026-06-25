@@ -140,7 +140,11 @@ const TicketVenta = forwardRef(({ venta, detalles, config }, ref) => {
 
       {/* ===== PAYMENT ===== */}
       <div style={{ fontSize: '10px', marginTop: '4px' }}>
-        <div>Forma de pago: <strong style={{ textTransform: 'capitalize' }}>{venta?.metodo_pago}</strong></div>
+        <div>Forma de pago: <strong style={{ textTransform: 'capitalize' }}>
+          {venta?.metodo_pago === 'fiado'
+            ? `Fiado${venta?.fiado_cliente_nombre ? ` - ${venta.fiado_cliente_nombre}` : ''}`
+            : venta?.metodo_pago}
+        </strong></div>
         {venta?.metodo_pago === 'efectivo' && (venta?.monto_recibido || 0) > 0 && (
           <>
             <div>Recibido: {formatMoney(venta.monto_recibido, sym)}</div>

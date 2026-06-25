@@ -48,10 +48,13 @@ export function generarMensajeTicket(
   venta: TicketVentaData,
   items: TicketItem[],
   config?: TicketConfig | null,
+  negocioNombre?: string | null,
 ): string {
   const sym = config?.simbolo_moneda || '$';
   const money = (n?: number | null): string => formatMoney(n ?? 0, sym);
-  const nombreNegocio = config?.nombre || 'Mi Tienda';
+  // El nombre real del negocio vive en `negocios.nombre` (no en configuracion_negocio).
+  // Se recibe como parámetro explícito; `config.nombre` queda como fallback histórico.
+  const nombreNegocio = negocioNombre || config?.nombre || 'Mi Tienda';
 
   const lineas: string[] = [];
   lineas.push(`🛒 *${nombreNegocio}*`);

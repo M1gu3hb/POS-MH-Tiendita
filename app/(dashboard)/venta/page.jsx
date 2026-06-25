@@ -4,14 +4,17 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useConfig } from '@/hooks/useConfig';
+import { useNegocio } from '@/hooks/useNegocio';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { useCarritoActivo } from '@/hooks/useCarritoActivo';
+import { useFiado } from '@/hooks/useFiado';
 import { getProductos, createProducto } from '@/lib/db/productos';
 import { getCategorias } from '@/lib/db/categorias';
 import { getProveedores } from '@/lib/db/proveedores';
 import { createVenta } from '@/lib/db/ventas';
 import { ajustarStock } from '@/lib/db/inventario';
 import { getScanEventsPendientes, marcarScanEvent, subscribeScanEvents } from '@/lib/db/scan';
+import { registrarCargo } from '@/lib/db/fiado';
 import { resolveProductByBarcode } from '@/lib/productLookup';
 import { formatMoney } from '@/utils/currency';
 import { generateFolio } from '@/utils/folioUtils';
@@ -32,12 +35,14 @@ import AsignarCodigoDialog from '@/components/venta/AsignarCodigoDialog';
 import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle } from 'lucide-react';
+import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle, CreditCard } from 'lucide-react';
 import { useGatedAction } from '@/hooks/useGatedAction';
 
 export default function VentaPage() {
   const { negocioId, usuario } = useAuth();
   const { config } = useConfig();
+  const { negocio } = useNegocio();
+  const { clientes: fiadoClientes } = useFiado();
   const { cajaAbierta, isLoading: cajaLoading, refetch: refetchCaja } = useCajaAbierta();
   const cajeroNombre = usuario?.nombre_visible || 'Cajero';
 
@@ -66,6 +71,8 @@ export default function VentaPage() {
   const [asignarOpen, setAsignarOpen] = useState(false);
   const [codigoParaAsignar, setCodigoParaAsignar] = useState('');
   const [scanFeedback, setScanFeedback] = useState(null);
+  const [fiadoOpen, setFiadoOpen] = useState(false);
+  const [fiadoSearch, setFiadoSearch] = useState('');
   const processedEventIdsRef = useRef(new Set());
 
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias', negocioId], queryFn: () => getCategorias(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
@@ -291,6 +298,109 @@ export default function VentaPage() {
     }
   };
 
+  // Cobro a FIADO: crea la venta con metodo_pago='fiado' y registra el cargo al
+  // cliente. Función separada para no alterar el handleCobro existente (efectivo/
+  // tarjeta/transferencia/mixto). CobroDialog no se modifica (fuera de los archivos
+  // permitidos esta ronda); el fiado entra por su propio botón + selector.
+  const handleCobroFiado = async (cliente) => {
+    if (!gated.ensureAccess()) return;
+    if (isProcessing || !cliente) return;
+    setIsProcessing(true);
+
+    const folio = generateFolio();
+    const subtotalVenta = carrito.reduce((s, i) => s + i.subtotal, 0);
+    const descuentoVenta = carrito.reduce((s, i) => s + (i.descuento || 0), 0);
+    const costoTotal = carrito.reduce((s, i) => s + i.costo * i.cantidad, 0);
+    const totalVenta = subtotalVenta - descuentoVenta;
+    const utilidadBruta = totalVenta - costoTotal;
+    const margen = totalVenta > 0 ? utilidadBruta / totalVenta : 0;
+
+    try {
+      const detalle = carrito.map((item) => ({
+        producto_id: item.producto_id,
+        producto_nombre: item.nombre,
+        sku: item.sku,
+        codigo_barras: item.codigo_barras,
+        cantidad: item.cantidad,
+        unidad_venta: item.unidad_venta || null,
+        precio_unitario_snapshot: item.precio,
+        costo_unitario_snapshot: item.costo,
+        subtotal: item.subtotal,
+        descuento: item.descuento || 0,
+        total: item.subtotal - (item.descuento || 0),
+        utilidad_snapshot: (item.precio - item.costo) * item.cantidad,
+      }));
+
+      const venta = await createVenta({
+        venta: {
+          negocio_id: negocioId,
+          folio,
+          fecha: new Date().toISOString(),
+          estado: 'pagada',
+          cajero_id: usuario?.id ?? null,
+          cajero_nombre: cajeroNombre,
+          subtotal: subtotalVenta,
+          descuento_total: descuentoVenta,
+          total: totalVenta,
+          costo_total_snapshot: costoTotal,
+          utilidad_bruta_snapshot: utilidadBruta,
+          margen_snapshot: margen,
+          corte_id: cajaAbierta?.id ?? null,
+          metodo_pago: 'fiado',
+        },
+        detalle,
+      });
+
+      // Descontar stock + kardex por cada renglón (igual que el cobro normal).
+      for (const item of carrito) {
+        const prod = productos.find((p) => p.id === item.producto_id);
+        if (!prod) continue;
+        const newStock = Math.max(0, (prod.stock_actual || 0) - item.cantidad);
+        await ajustarStock({
+          negocioId,
+          productoId: item.producto_id,
+          productoNombre: item.nombre,
+          stockAnterior: prod.stock_actual || 0,
+          stockNuevo: newStock,
+          tipoMovimiento: 'salida_venta',
+          usuarioId: usuario?.id ?? null,
+          usuarioNombre: cajeroNombre,
+          costoUnitario: item.costo,
+          referenciaTipo: 'venta',
+          referenciaId: venta.id,
+        });
+      }
+
+      // Cargo al fiado del cliente (suma al saldo pendiente).
+      await registrarCargo(cliente.id, negocioId, totalVenta, venta.id, cajeroNombre, `Venta ${folio}`);
+
+      // Vista Cliente (mismo dispositivo): limpiar el carrito de la segunda pantalla.
+      try {
+        localStorage.setItem(KEY_CART, JSON.stringify({ items: [], total: 0, subtotal: 0, descuento: 0, config }));
+        const bc = new BroadcastChannel('pos-mh-channel');
+        bc.postMessage({ type: 'cart', payload: { items: [], total: 0, subtotal: 0, descuento: 0, config } });
+        bc.close();
+      } catch { /* noop */ }
+
+      // fiado_cliente_nombre es solo para el ticket en memoria (no es columna de ventas).
+      setLastVenta({ ...venta, fiado_cliente_nombre: cliente.nombre });
+      setLastDetalles(detalle);
+      await cerrarVentaCarrito();
+      setFiadoOpen(false);
+      setShowTicket(true);
+      playSaleSuccess();
+      toast.success(`Venta ${folio} a fiado de ${cliente.nombre}`);
+
+      ['ventas-caja', 'productos-pos', 'productos-dashboard', 'caja-cortes', 'dashboard-cortes', 'registros-ventas', 'fiado-clientes'].forEach((k) =>
+        queryClient.invalidateQueries({ queryKey: [k] }),
+      );
+    } catch (err) {
+      toast.error('Error al procesar venta a fiado: ' + (err?.message || ''));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const printTicket = () => {
     if (!ticketRef.current) return;
     const html = ticketRef.current.outerHTML;
@@ -309,7 +419,7 @@ export default function VentaPage() {
   // wa.me sin número abre el selector de chat: en móvil usa la app, en escritorio WhatsApp Web.
   const shareWhatsApp = () => {
     if (!lastVenta) return;
-    const mensaje = generarMensajeTicket(lastVenta, lastDetalles, config);
+    const mensaje = generarMensajeTicket(lastVenta, lastDetalles, config, negocio?.nombre);
     window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer');
   };
 
@@ -471,12 +581,17 @@ export default function VentaPage() {
 
       <div className="hidden lg:flex w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-border flex-col" style={{ background: 'hsl(var(--card))', boxShadow: '-4px 0 16px rgba(0,0,0,0.06)' }}>
         <CarritoVenta items={carrito} onUpdateQty={updateQty} onRemove={removeItem} sym={sym} />
-        <div className="p-3 flex gap-2 border-t border-border">
-          <button onClick={cancelSale} disabled={carrito.length === 0} className="skeu-btn-danger flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
-            <Trash2 className="h-4 w-4" /> Cancelar
-          </button>
-          <button onClick={gated(() => setCobroOpen(true))} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-primary flex-[2] h-12 rounded-xl font-black text-base flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
-            <DollarSign className="h-5 w-5" /> Cobrar {formatMoney(total, sym)}
+        <div className="p-3 flex flex-col gap-2 border-t border-border">
+          <div className="flex gap-2">
+            <button onClick={cancelSale} disabled={carrito.length === 0} className="skeu-btn-danger flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
+              <Trash2 className="h-4 w-4" /> Cancelar
+            </button>
+            <button onClick={gated(() => setCobroOpen(true))} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-primary flex-[2] h-12 rounded-xl font-black text-base flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
+              <DollarSign className="h-5 w-5" /> Cobrar {formatMoney(total, sym)}
+            </button>
+          </div>
+          <button onClick={gated(() => setFiadoOpen(true))} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-ghost h-10 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 text-foreground disabled:opacity-40 disabled:pointer-events-none transition-all">
+            <CreditCard className="h-4 w-4" /> Cobrar a fiado
           </button>
         </div>
       </div>
@@ -516,6 +631,43 @@ export default function VentaPage() {
       <ProductoDialog open={nuevoProdOpen} onClose={() => { setNuevoProdOpen(false); setCodigoParaNuevo(''); }} onSave={handleGuardarNuevoProducto} producto={null} categorias={categorias} proveedores={proveedores} codigoInicial={codigoParaNuevo} />
 
       <CierreCajaDialog open={cierreOpen} onClose={() => setCierreOpen(false)} cajaAbierta={cajaAbierta} ventas={[]} gastos={[]} onSuccess={() => { setCierreOpen(false); refetchCaja(); ['caja-abierta', 'caja-cortes', 'registros-cortes', 'reportes-generados'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] })); }} />
+
+      {fiadoOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print" onClick={() => setFiadoOpen(false)}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h2 className="font-bold text-sm text-foreground">Cobrar a fiado · {formatMoney(total, sym)}</h2>
+              <button onClick={() => setFiadoOpen(false)} aria-label="Cerrar" className="text-muted-foreground hover:text-foreground"><Trash2 className="h-4 w-4" /></button>
+            </div>
+            <div className="p-3">
+              <input
+                value={fiadoSearch}
+                onChange={(e) => setFiadoSearch(e.target.value)}
+                placeholder="Buscar cliente…"
+                className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring mb-2"
+              />
+              <div className="max-h-72 overflow-y-auto">
+                {fiadoClientes.filter((c) => c.nombre.toLowerCase().includes(fiadoSearch.toLowerCase())).length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-3 text-center italic">No hay clientes. Créalos en la sección Fiado.</p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {fiadoClientes
+                      .filter((c) => c.nombre.toLowerCase().includes(fiadoSearch.toLowerCase()))
+                      .map((c) => (
+                        <li key={c.id}>
+                          <button onClick={() => handleCobroFiado(c)} disabled={isProcessing} className="w-full text-left py-2.5 px-2 flex items-center justify-between gap-2 hover:bg-muted/50 rounded-lg disabled:opacity-50">
+                            <span className="text-sm font-semibold text-foreground truncate">{c.nombre}</span>
+                            <span className={`text-xs font-bold tabular-nums ${c.saldo_pendiente > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatMoney(c.saldo_pendiente, sym)}</span>
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
