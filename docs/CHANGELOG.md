@@ -4,6 +4,59 @@ Formato: cada entrada con fecha y los cambios significativos de la fase.
 
 ---
 
+## 2026-06-24 — Features colaboradores (reportes #007–#009) — auditado
+
+Tres tareas de feature de agentes concurrentes. Build final en verde (`tsc`/`next build` exit 0);
+sin Supabase directo en componentes (verificado). Detalle de pendientes en `docs/BUGS_PENDING.md`.
+
+- **#007 (claude-code) — Escáner móvil a Realtime puro.** Se reemplazó el polling de 1.5s del POS
+  (`venta/page.jsx`) por suscripción Realtime: nuevo helper `subscribeScanEvents(corteId, onInsert)`
+  en `src/lib/db/scan.ts` (canal `postgres_changes` INSERT filtrado por `corte_id`), con catch-up
+  inicial una sola vez, dedup síncrono y cleanup del canal. `carrito_items` Realtime ya lo cubría
+  `useCarritoActivo`. `package.json`: nuevo script `dev:stable` = `next dev --turbo` (`dev` intacto).
+  **Reparó** el import roto que dejó el commit `cf9d03c` (ver #009).
+- **#008 (codex) — Imagen de producto + alerta de stock bajo.** `ProductoDialog` ahora sube imagen
+  con dos opciones (galería y cámara), valida JPG/PNG/WebP ≤ 2 MB y muestra thumbnail 80×80 con botón
+  de limpiar. `app/api/storage/upload/route.ts`: soporta `folder=productos`
+  (`<negocio_id>/productos/<timestamp>.<ext>`) **con validación server-side de MIME y tamaño**
+  (rechaza no-imagen con 415; verificado E2E con tenant temporal). Tras venta exitosa, `toast.warning`
+  por cada producto que queda en/bajo `stock_minimo`.
+- **#009 (antigravity) — Top 5 productos + mayoreo automático.** Dashboard (`page.jsx`) muestra "Más
+  vendidos esta semana" vía `getTopProductos(negocioId, limite)` en `ventas.ts` (agregación en memoria
+  por límite de PostgREST). POS aplica precio de mayoreo automático cuando `config.activar_mayoreo`,
+  `cantidad >= cantidad_minima_mayoreo`; vuelve a precio normal al bajar la cantidad, con badge
+  "MAYOREO" en `CarritoVenta.jsx` y `MobileCartBar.jsx`. Cambios en `carrito.ts`/`useCarritoActivo.ts`
+  para propagar `precio_unitario`/`es_mayoreo` por la capa de datos.
+
+> Nota de auditoría: el commit `cf9d03c` (#009) rompió temporalmente el build del remoto (import de
+> `subscribeScanEvents` sin el helper); #007 lo reparó. Verificación de #007–#009 a nivel build; falta
+> prueba runtime (Realtime con 2 dispositivos, badge de mayoreo con datos reales).
+
+---
+
+## 2026-06-24 — fix-bugs-ui (reporte colaborador #001, claude-code) — auditado
+
+Commit `ec760d4` "fix: registro auto-redirect + categorías vacías + scrollbar sidebar" (5 archivos).
+Tres bugs de UI corregidos (detalle y estado en `docs/BUGS_PENDING.md`):
+
+1. **Registro no auto-redirige** · `app/(auth)/register/page.tsx`: tras `await signInWithPassword`
+   se añadió `router.refresh()` (invalida el Router Cache de Next) antes de `router.replace('/')`.
+   Nota: la causa real fue el Router Cache, no el sign-in (ya presente); se desvió de la consigna
+   original —que pedía añadir el `signInWithPassword`— pero el fix es correcto y está justificado.
+2. **ProductoDialog sin categorías** · `src/components/productos/ProductoDialog.jsx`: con la lista
+   vacía el select muestra aviso + botón "+ Nueva categoría" → diálogo inline (nombre + 5 colores),
+   usa `createCategoria` (ya existente), invalida `['categorias', negocioId]` y auto-selecciona.
+3. **Scrollbar del sidebar** · `app/globals.css` (utilidad `.scrollbar-hide`) + `app/(dashboard)/layout.tsx`
+   (clase aplicada al `<nav>`).
+
+**Auditoría:** los 3 cambios verificados en el código; coinciden con lo reportado. La clave de
+invalidación `['categorias', negocioId]` coincide con la del padre (`productos/page.jsx`). Sin
+cambios fuera de `docs/`, `app/` y `src/components`. **Pendiente:** verificación solo a nivel de
+build/`tsc` (exit 0); **no** hubo prueba runtime en navegador contra la BD real — recomendado antes
+de cerrar definitivamente. Sin bugs nuevos detectados.
+
+---
+
 ## 2026-06-24 — Cierre de sesión: BD real conectada, fix de registro, hardening y prueba de venta
 
 ### Infra / Git

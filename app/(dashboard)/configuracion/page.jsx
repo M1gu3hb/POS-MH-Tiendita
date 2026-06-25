@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import QRCode from 'qrcode';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { getConfiguracion, updateConfiguracion } from '@/lib/db/configuracion';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,8 @@ export default function ConfiguracionPage() {
   const { negocioId } = useAuth();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const [savingQr, setSavingQr] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   const { data: config } = useQuery({
     queryKey: ['config-negocio', negocioId],
@@ -48,9 +51,27 @@ export default function ConfiguracionPage() {
         abrir_caja_obligatorio: config.abrir_caja_obligatorio !== false,
         iva_porcentaje: config.iva_porcentaje || 0,
         mostrar_logo_ticket: config.mostrar_logo_ticket !== false,
+        qr_url: config.qr_url || '',
       });
     }
   }, [config]);
+
+  useEffect(() => {
+    const url = form.qr_url?.trim();
+    let cancelled = false;
+    if (!url) {
+      setQrDataUrl('');
+      return () => { cancelled = true; };
+    }
+    QRCode.toDataURL(url, { width: 150, margin: 1 })
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl('');
+      });
+    return () => { cancelled = true; };
+  }, [form.qr_url]);
 
   const handleSave = async () => {
     if (!config) return;
@@ -79,6 +100,20 @@ export default function ConfiguracionPage() {
       toast.success('Logo cargado');
     } catch {
       toast.error('Error al cargar imagen');
+    }
+  };
+
+  const handleSaveQr = async () => {
+    if (!config) return;
+    setSavingQr(true);
+    try {
+      await updateConfiguracion(negocioId, { qr_url: form.qr_url?.trim() || null });
+      queryClient.invalidateQueries({ queryKey: ['config-negocio'] });
+      toast.success('URL de QR guardada');
+    } catch {
+      toast.error('Error al guardar URL');
+    } finally {
+      setSavingQr(false);
     }
   };
 
@@ -180,6 +215,27 @@ export default function ConfiguracionPage() {
             <div>
               <Label>Mensaje final del ticket</Label>
               <Input value={form.mensaje_ticket || ''} onChange={(e) => update('mensaje_ticket', e.target.value)} className="mt-1" />
+            </div>
+            <div className="pt-3 border-t border-border">
+              <h2 className="font-bold text-foreground text-sm mb-3">Código QR del negocio</h2>
+              <Label>URL de tu página (Facebook, Instagram, sitio web...)</Label>
+              <div className="flex flex-col sm:flex-row gap-2 mt-1">
+                <Input
+                  value={form.qr_url || ''}
+                  onChange={(e) => update('qr_url', e.target.value)}
+                  placeholder="https://facebook.com/mi-tienda"
+                  className="flex-1"
+                />
+                <Button type="button" onClick={handleSaveQr} disabled={savingQr} className="bg-primary">
+                  {savingQr ? 'Guardando...' : 'Guardar URL'}
+                </Button>
+              </div>
+              {form.qr_url && qrDataUrl && (
+                <div className="mt-3 flex items-center justify-center sm:justify-start">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrDataUrl} alt="Código QR del negocio" className="h-[150px] w-[150px] rounded-lg bg-white p-2 border border-border" />
+                </div>
+              )}
             </div>
           </div>
         </TabsContent>

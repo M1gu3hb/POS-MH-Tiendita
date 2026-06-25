@@ -1,14 +1,15 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { useConfig } from '@/hooks/useConfig';
-import { getVentas, getTopProductos } from '@/lib/db/ventas';
+import { getVentas, getTopProductos, getResumenHoy } from '@/lib/db/ventas';
 import { getGastos } from '@/lib/db/egresos';
 import { getCortes } from '@/lib/db/caja';
-import { getProductos } from '@/lib/db/productos';
+import { getProductos, getProductosStockBajo } from '@/lib/db/productos';
 import { formatMoney, formatPercent } from '@/utils/currency';
 import StatCard from '@/components/dashboard/StatCard';
 import LoadingState from '@/components/common/LoadingState';
@@ -22,13 +23,48 @@ import {
 } from 'recharts';
 import ChartTooltip from '@/components/common/ChartTooltip';
 import SuscripcionAviso from '@/components/dashboard/SuscripcionAviso';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+
 
 const PAYMENT_COLORS = ['#22c55e', '#3b82f6', '#a855f7'];
 
 export default function DashboardPage() {
-  const { negocioId } = useAuth();
+  const { negocioId, usuario } = useAuth();
   const { config } = useConfig();
   const { cajaAbierta, isLoading: cajaLoading } = useCajaAbierta();
+
+  const [resumenOpen, setResumenOpen] = useState(false);
+  const [expandedSuppliers, setExpandedSuppliers] = useState({});
+
+  const { data: resumenHoy, isLoading: resumenLoading } = useQuery({
+    queryKey: ['resumen-hoy', negocioId],
+    queryFn: () => getResumenHoy(negocioId),
+    enabled: !!negocioId && usuario?.rol === 'dueno',
+    staleTime: 1000 * 30,
+  });
+
+  const { data: productosStockBajo = [] } = useQuery({
+    queryKey: ['productos-stock-bajo', negocioId],
+    queryFn: () => getProductosStockBajo(negocioId),
+    enabled: !!negocioId,
+  });
+
+  // Agrupar los resultados por proveedor_nombre
+  const lowStockBySupplier = {};
+  (productosStockBajo || []).forEach((p) => {
+    const key = p.proveedor_nombre || 'Sin proveedor asignado';
+    if (!lowStockBySupplier[key]) {
+      lowStockBySupplier[key] = [];
+    }
+    lowStockBySupplier[key].push(p);
+  });
+
+  // Proveedores con 3 o más productos en stock bajo
+  const suggestedOrders = Object.entries(lowStockBySupplier)
+    .filter(([_, items]) => items.length >= 3)
+    .map(([supplier, items]) => ({ supplier, items }));
+
 
   // Métricas de la CAJA ACTUAL (no del día acumulado).
   const cajaId = cajaAbierta?.id || null;
@@ -121,7 +157,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -131,8 +166,19 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
-        <div className={`px-4 py-2 rounded-full text-xs font-bold tracking-wide skeu-card ${cajaAbierta ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
-          {cajaAbierta ? '● Caja Abierta' : '○ Caja Cerrada'}
+        <div className="flex items-center gap-2">
+          {usuario?.rol === 'dueno' && (
+            <Button
+              variant="outline"
+              onClick={() => setResumenOpen(true)}
+              className="skeu-card h-9 text-xs font-bold bg-background text-foreground"
+            >
+              📊 Resumen de hoy
+            </Button>
+          )}
+          <div className={`px-4 py-2 rounded-full text-xs font-bold tracking-wide skeu-card ${cajaAbierta ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            {cajaAbierta ? '● Caja Abierta' : '○ Caja Cerrada'}
+          </div>
         </div>
       </div>
 
@@ -142,6 +188,53 @@ export default function DashboardPage() {
         <div className="skeu-card p-3 text-center text-sm text-muted-foreground">
           Caja cerrada — abre una caja para empezar a registrar ventas. Los datos históricos están en{' '}
           <Link href="/registros" className="text-primary hover:underline">Registros</Link>.
+        </div>
+      )}
+
+      {/* Banners de pedido sugerido por proveedor */}
+      {suggestedOrders.length > 0 && (
+        <div className="space-y-3">
+          {suggestedOrders.map(({ supplier, items }) => {
+            const isExpanded = !!expandedSuppliers[supplier];
+            return (
+              <div
+                key={supplier}
+                className="skeu-panel border-amber-500/30 bg-amber-500/5 dark:bg-amber-500/10 p-4"
+              >
+                <div
+                  onClick={() =>
+                    setExpandedSuppliers((prev) => ({
+                      ...prev,
+                      [supplier]: !prev[supplier],
+                    }))
+                  }
+                  className="flex items-center justify-between cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📦</span>
+                    <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      Pedido sugerido a {supplier}: {items.length} productos con stock bajo
+                    </p>
+                  </div>
+                  <span className="text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline">
+                    {isExpanded ? 'Ocultar' : 'Ver productos'}
+                  </span>
+                </div>
+                {isExpanded && (
+                  <div className="mt-3 pt-3 border-t border-amber-500/20 divide-y divide-amber-500/10">
+                    {items.map((item) => (
+                      <div key={item.id} className="flex justify-between items-center py-2 text-sm text-foreground">
+                        <span className="truncate pr-4 font-medium">{item.nombre}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground font-semibold shrink-0">
+                          Stock: {item.stock_actual} / Mín: {item.stock_minimo}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -304,6 +397,97 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={resumenOpen} onOpenChange={setResumenOpen}>
+        <DialogContent className="sm:max-w-md skeu-panel">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-foreground">
+              📊 Resumen Financiero de Hoy
+            </DialogTitle>
+          </DialogHeader>
+          {resumenLoading ? (
+            <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+              <span className="inline-block h-4 w-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-2" />
+              Cargando resumen...
+            </div>
+          ) : resumenHoy ? (
+            <div className="space-y-4 py-2">
+              <p className="text-xs text-muted-foreground mb-4">
+                Vista rápida acumulada del día actual ({new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'short' })}). No es un corte de caja.
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="skeu-card p-3">
+                  <span className="text-xs text-muted-foreground block">Total Vendido</span>
+                  <span className="text-lg font-bold text-blue-600 dark:text-blue-400 tabular-nums">
+                    {formatMoney(resumenHoy.total_ventas, sym)}
+                  </span>
+                </div>
+                <div className="skeu-card p-3">
+                  <span className="text-xs text-muted-foreground block">Tickets Emitidos</span>
+                  <span className="text-lg font-bold text-foreground tabular-nums">
+                    {resumenHoy.num_tickets}
+                  </span>
+                </div>
+                <div className="skeu-card p-3 col-span-2">
+                  <span className="text-xs text-muted-foreground block">Utilidad Bruta</span>
+                  <span className="text-lg font-bold text-green-600 dark:text-green-400 tabular-nums">
+                    {formatMoney(resumenHoy.utilidad_bruta, sym)}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground block">
+                    Costo total mercancía: {formatMoney(resumenHoy.costo_total, sym)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="skeu-card p-4 space-y-2">
+                <h4 className="text-xs font-bold text-foreground border-b border-border pb-1">
+                  Desglose por método de pago
+                </h4>
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <Banknote className="h-3.5 w-3.5 text-green-500" /> Efectivo
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {formatMoney(resumenHoy.total_efectivo, sym)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <CreditCard className="h-3.5 w-3.5 text-blue-500" /> Tarjeta
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {formatMoney(resumenHoy.total_tarjeta, sym)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <ArrowRightLeft className="h-3.5 w-3.5 text-purple-500" /> Transferencia
+                    </span>
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {formatMoney(resumenHoy.total_transferencia, sym)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-4">No se pudo cargar el resumen.</p>
+          )}
+          <DialogFooter className="sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setResumenOpen(false)}
+              className="skeu-card text-xs font-bold"
+            >
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

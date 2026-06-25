@@ -8,7 +8,11 @@ import type { ConfiguracionNegocio, Negocio } from '@/lib/db/types';
 
 export type ConfiguracionUpdate = Partial<
   Omit<ConfiguracionNegocio, 'id' | 'negocio_id' | 'updated_at'>
->;
+> & { qr_url?: string | null };
+
+export type ConfiguracionConQr = ConfiguracionNegocio & {
+  qr_url: string | null;
+};
 
 export async function getNegocio(negocioId: string): Promise<Pick<Negocio, 'id' | 'nombre'> | null> {
   const { data, error } = await supabase
@@ -22,13 +26,13 @@ export async function getNegocio(negocioId: string): Promise<Pick<Negocio, 'id' 
   return data ?? null;
 }
 
-export async function getConfiguracion(negocioId: string): Promise<ConfiguracionNegocio | null> {
+export async function getConfiguracion(negocioId: string): Promise<ConfiguracionConQr | null> {
   const { data, error } = await supabase
     .from('configuracion_negocio')
     .select('*')
     .eq('negocio_id', negocioId)
     .maybeSingle()
-    .returns<ConfiguracionNegocio | null>();
+    .returns<ConfiguracionConQr | null>();
 
   if (error) throw error;
   return data ?? null;
@@ -37,14 +41,14 @@ export async function getConfiguracion(negocioId: string): Promise<Configuracion
 export async function updateConfiguracion(
   negocioId: string,
   data: ConfiguracionUpdate,
-): Promise<ConfiguracionNegocio> {
+): Promise<ConfiguracionConQr> {
   const { data: updated, error } = await supabase
     .from('configuracion_negocio')
     .update(data)
     .eq('negocio_id', negocioId)
     .select('*')
     .single()
-    .returns<ConfiguracionNegocio>();
+    .returns<ConfiguracionConQr>();
 
   if (error) throw error;
   return updated;

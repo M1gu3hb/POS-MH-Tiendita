@@ -149,3 +149,53 @@ export async function getTopProductos(
     .slice(0, limite);
 }
 
+export interface ResumenHoy {
+  total_ventas: number;
+  num_tickets: number;
+  costo_total: number;
+  utilidad_bruta: number;
+  total_efectivo: number;
+  total_tarjeta: number;
+  total_transferencia: number;
+}
+
+export async function getResumenHoy(negocioId: string): Promise<ResumenHoy> {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const isoString = startOfDay.toISOString();
+
+  const { data, error } = await supabase
+    .from('ventas')
+    .select('total, costo_total_snapshot, utilidad_bruta_snapshot, monto_efectivo, monto_tarjeta, monto_transferencia')
+    .eq('negocio_id', negocioId)
+    .eq('estado', 'pagada')
+    .gte('fecha', isoString);
+
+  if (error) throw error;
+
+  const res: ResumenHoy = {
+    total_ventas: 0,
+    num_tickets: 0,
+    costo_total: 0,
+    utilidad_bruta: 0,
+    total_efectivo: 0,
+    total_tarjeta: 0,
+    total_transferencia: 0,
+  };
+
+  if (data) {
+    res.num_tickets = data.length;
+    data.forEach((v) => {
+      res.total_ventas += Number(v.total || 0);
+      res.costo_total += Number(v.costo_total_snapshot || 0);
+      res.utilidad_bruta += Number(v.utilidad_bruta_snapshot || 0);
+      res.total_efectivo += Number(v.monto_efectivo || 0);
+      res.total_tarjeta += Number(v.monto_tarjeta || 0);
+      res.total_transferencia += Number(v.monto_transferencia || 0);
+    });
+  }
+
+  return res;
+}
+
+

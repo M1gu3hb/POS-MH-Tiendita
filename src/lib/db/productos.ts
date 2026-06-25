@@ -111,3 +111,55 @@ export async function deleteProducto(id: string): Promise<void> {
   const { error } = await supabase.from('productos').delete().eq('id', id);
   if (error) throw error;
 }
+
+export interface ProductoStockBajo {
+  id: string;
+  nombre: string;
+  stock_actual: number;
+  stock_minimo: number;
+  proveedor_id: string | null;
+  proveedor_nombre: string | null;
+}
+
+interface DBProductoConProveedor {
+  id: string;
+  nombre: string;
+  stock_actual: number;
+  stock_minimo: number;
+  proveedor_id: string | null;
+  proveedores: { nombre: string } | null;
+}
+
+export async function getProductosStockBajo(negocioId: string): Promise<ProductoStockBajo[]> {
+  const { data, error } = await supabase
+    .from('productos')
+    .select('id, nombre, stock_actual, stock_minimo, proveedor_id, proveedores:proveedor_id(nombre)')
+    .eq('negocio_id', negocioId)
+    .eq('activo', true)
+    .returns<DBProductoConProveedor[]>();
+
+  if (error) throw error;
+
+  const lowStock = (data || [])
+    .filter((p) => p.stock_actual <= p.stock_minimo)
+    .map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      stock_actual: p.stock_actual,
+      stock_minimo: p.stock_minimo,
+      proveedor_id: p.proveedor_id,
+      proveedor_nombre: p.proveedores ? p.proveedores.nombre : null,
+    }));
+
+  lowStock.sort((a, b) => {
+    const provA = a.proveedor_nombre || '';
+    const provB = b.proveedor_nombre || '';
+    if (provA !== provB) {
+      return provA.localeCompare(provB);
+    }
+    return a.nombre.localeCompare(b.nombre);
+  });
+
+  return lowStock;
+}
+

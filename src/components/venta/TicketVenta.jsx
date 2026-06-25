@@ -1,10 +1,29 @@
 'use client';
-import { forwardRef } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { formatMoney } from '@/utils/currency';
 
 const TicketVenta = forwardRef(({ venta, detalles, config }, ref) => {
   const sym = config?.simbolo_moneda || '$';
   const fecha = venta?.fecha ? new Date(venta.fecha) : new Date();
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    const url = config?.qr_url?.trim();
+    let cancelled = false;
+    if (!url) {
+      setQrDataUrl('');
+      return () => { cancelled = true; };
+    }
+    QRCode.toDataURL(url, { width: 80, margin: 1 })
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl('');
+      });
+    return () => { cancelled = true; };
+  }, [config?.qr_url]);
 
   const row = (left, right, bold = false) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px', fontWeight: bold ? 'bold' : 'normal' }}>
@@ -149,6 +168,12 @@ const TicketVenta = forwardRef(({ venta, detalles, config }, ref) => {
       <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: '600' }}>
         {config?.mensaje_ticket || '¡Gracias por su compra!'}
       </div>
+      {config?.qr_url && qrDataUrl && (
+        <div style={{ textAlign: 'center', marginTop: '6px' }}>
+          <img src={qrDataUrl} alt="" style={{ width: '80px', height: '80px', margin: '0 auto', display: 'block' }} />
+          <div style={{ fontSize: '9px', marginTop: '2px' }}>Síguenos / Contáctanos</div>
+        </div>
+      )}
     </div>
   );
 });
