@@ -8,6 +8,7 @@ import { useNegocio } from '@/hooks/useNegocio';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { useCarritoActivo } from '@/hooks/useCarritoActivo';
 import { useFiado } from '@/hooks/useFiado';
+import { useOffline } from '@/hooks/useOffline';
 import { getProductos, createProducto } from '@/lib/db/productos';
 import { getCategorias } from '@/lib/db/categorias';
 import { getProveedores } from '@/lib/db/proveedores';
@@ -15,6 +16,9 @@ import { createVenta } from '@/lib/db/ventas';
 import { ajustarStock } from '@/lib/db/inventario';
 import { getScanEventsPendientes, marcarScanEvent, subscribeScanEvents } from '@/lib/db/scan';
 import { registrarCargo } from '@/lib/db/fiado';
+import { cacheProductos, buscarProductoOffline } from '@/lib/offline/productos';
+import { cacheConfig } from '@/lib/offline/config';
+import { guardarVentaPendiente } from '@/lib/offline/ventas';
 import { resolveProductByBarcode } from '@/lib/productLookup';
 import { formatMoney } from '@/utils/currency';
 import { generateFolio } from '@/utils/folioUtils';
@@ -33,6 +37,7 @@ import ProductoNoEncontradoDialog from '@/components/venta/ProductoNoEncontradoD
 import ProductoDialog from '@/components/productos/ProductoDialog';
 import AsignarCodigoDialog from '@/components/venta/AsignarCodigoDialog';
 import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
+import OfflineBanner from '@/components/venta/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle, CreditCard } from 'lucide-react';
@@ -54,8 +59,16 @@ export default function VentaPage() {
 
   const { items, addItem, updateQty: updateQtyShared, removeItem: removeItemShared, clear: clearCartShared, cerrarVenta: cerrarVentaCarrito } = useCarritoActivo(cajaAbierta?.id || null);
 
-  // Vista para los componentes de UI (esperan nombre/precio/costo).
-  const carrito = items.map((i) => ({ ...i, nombre: i.producto_nombre, precio: i.precio_unitario, costo: i.costo_unitario, es_mayoreo: i.es_mayoreo }));
+  // Modo offline: el carrito normal es DB-backed (useCarritoActivo) y no funciona sin
+  // conexión, así que offline se usa un carrito local en esta página.
+  const { isOffline, ventasPendientes, sincronizando, refrescarPendientes } = useOffline();
+  const [offlineCart, setOfflineCart] = useState([]);
+  const [offlineProductos, setOfflineProductos] = useState([]);
+
+  // Vista del carrito para la UI (nombre/precio/costo). Offline → carrito local.
+  const carrito = isOffline
+    ? offlineCart
+    : items.map((i) => ({ ...i, nombre: i.producto_nombre, precio: i.precio_unitario, costo: i.costo_unitario, es_mayoreo: i.es_mayoreo }));
 
   const [cobroOpen, setCobroOpen] = useState(false);
   const [cajaDialogOpen, setCajaDialogOpen] = useState(false);
@@ -83,7 +96,71 @@ export default function VentaPage() {
   const total = carrito.reduce((s, i) => s + i.subtotal - (i.descuento || 0), 0);
   const gated = useGatedAction();
 
+  // Productos a mostrar/buscar: offline usa el cache de IndexedDB.
+  const productosUI = isOffline ? offlineProductos : productos;
+
+  // Registrar el Service Worker. STEP 6 movido aquí porque app/layout.tsx NO está en
+  // los archivos permitidos esta ronda; registrado desde /venta queda activo para todo el origen.
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  }, []);
+
+  // Cachear productos y config para uso offline mientras hay conexión.
+  useEffect(() => {
+    if (!isOffline && productos.length > 0) void cacheProductos(productos);
+  }, [productos, isOffline]);
+  useEffect(() => {
+    if (!isOffline && config) void cacheConfig(config);
+  }, [config, isOffline]);
+
+  // Al entrar en modo offline, cargar los productos cacheados.
+  useEffect(() => {
+    if (isOffline) {
+      void buscarProductoOffline('').then(setOfflineProductos).catch(() => setOfflineProductos([]));
+    }
+  }, [isOffline]);
+
+  // Agregar al carrito local (offline).
+  const addOfflineItem = useCallback((producto) => {
+    setOfflineCart((prev) => {
+      const idx = prev.findIndex((i) => i.producto_id === producto.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        const it = copy[idx];
+        const cantidad = (it.cantidad || 0) + 1;
+        copy[idx] = { ...it, cantidad, subtotal: (it.precio || 0) * cantidad };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          producto_id: producto.id,
+          nombre: producto.nombre,
+          precio: producto.precio_venta || 0,
+          costo: producto.costo_unitario || 0,
+          cantidad: 1,
+          subtotal: producto.precio_venta || 0,
+          descuento: 0,
+          sku: producto.sku || null,
+          codigo_barras: producto.codigo_barras || null,
+          unidad_venta: producto.unidad_venta || null,
+        },
+      ];
+    });
+    playScanSuccess();
+  }, []);
+
   const addToCart = useCallback((producto, opts = {}) => {
+    if (isOffline) {
+      // Offline: carrito local, sin gating de suscripción (modo degradado para seguir vendiendo).
+      addOfflineItem(producto);
+      if (opts.showFeedback) {
+        setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: 1, precio: producto.precio_venta, modo: 'local' });
+      }
+      return;
+    }
     if (!gated.ensureAccess()) return;
     if (!config?.permitir_venta_sin_stock && !producto.permite_venta_sin_stock && producto.stock_actual <= 0) {
       toast.error('Producto sin stock');
@@ -99,9 +176,19 @@ export default function VentaPage() {
     if (opts.showFeedback) {
       setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: nuevaCant, precio: precioUnitario, modo: 'local' });
     }
-  }, [config, addItem, gated, items]);
+  }, [config, addItem, gated, items, isOffline, addOfflineItem]);
 
   const updateQty = (idx, qty) => {
+    if (isOffline) {
+      setOfflineCart((prev) => {
+        if (qty <= 0) return prev.filter((_, i) => i !== idx);
+        const copy = [...prev];
+        const it = copy[idx];
+        if (it) copy[idx] = { ...it, cantidad: qty, subtotal: (it.precio || 0) * qty };
+        return copy;
+      });
+      return;
+    }
     const item = items[idx];
     if (item) {
       const prod = productos.find((p) => p.id === item.producto_id);
@@ -115,6 +202,10 @@ export default function VentaPage() {
     }
   };
   const removeItem = (idx) => {
+    if (isOffline) {
+      setOfflineCart((prev) => prev.filter((_, i) => i !== idx));
+      return;
+    }
     const item = items[idx];
     if (item) removeItemShared(item.id);
   };
@@ -122,7 +213,7 @@ export default function VentaPage() {
   const handleBarcodeScan = useCallback(async (code) => {
     const normalized = normalizeBarcode(code);
     if (!normalized) return;
-    const result = resolveProductByBarcode(normalized, productos);
+    const result = resolveProductByBarcode(normalized, productosUI);
     if (result.status === 'not_found') {
       playScanError();
       setNoEncontradoCode(normalized);
@@ -136,7 +227,7 @@ export default function VentaPage() {
     }
     addToCart(result.producto, { showFeedback: scannerOpen });
     if (!scannerOpen) toast.success(`Agregado: ${result.producto.nombre}`);
-  }, [productos, addToCart, scannerOpen]);
+  }, [productosUI, addToCart, scannerOpen]);
 
   const handleCrearProductoDesdeNoEncontrado = () => {
     setCodigoParaNuevo(noEncontradoCode || '');
@@ -174,8 +265,69 @@ export default function VentaPage() {
   const cancelSale = () => {
     if (carrito.length === 0) return;
     if (window.confirm('¿Cancelar la venta actual?')) {
-      clearCartShared();
+      if (isOffline) setOfflineCart([]);
+      else clearCartShared();
       toast.info('Venta cancelada');
+    }
+  };
+
+  // Cobro OFFLINE: guarda la venta en IndexedDB para sincronizar al volver internet.
+  // No toca Supabase. Usa el carrito local (offlineCart). Método de pago: efectivo
+  // (offline no se abre CobroDialog). Stock/kardex se aplican al sincronizar (vía repo).
+  const handleCobroOffline = async () => {
+    if (carrito.length === 0 || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const folio = generateFolio();
+      const subtotalVenta = carrito.reduce((s, i) => s + i.subtotal, 0);
+      const descuentoVenta = carrito.reduce((s, i) => s + (i.descuento || 0), 0);
+      const costoTotal = carrito.reduce((s, i) => s + i.costo * i.cantidad, 0);
+      const totalVenta = subtotalVenta - descuentoVenta;
+      const utilidadBruta = totalVenta - costoTotal;
+      const margen = totalVenta > 0 ? utilidadBruta / totalVenta : 0;
+
+      const detalle = carrito.map((item) => ({
+        producto_id: item.producto_id,
+        producto_nombre: item.nombre,
+        sku: item.sku,
+        codigo_barras: item.codigo_barras,
+        cantidad: item.cantidad,
+        unidad_venta: item.unidad_venta || null,
+        precio_unitario_snapshot: item.precio,
+        costo_unitario_snapshot: item.costo,
+        subtotal: item.subtotal,
+        descuento: item.descuento || 0,
+        total: item.subtotal - (item.descuento || 0),
+        utilidad_snapshot: (item.precio - item.costo) * item.cantidad,
+      }));
+
+      await guardarVentaPendiente({
+        venta: {
+          negocio_id: negocioId,
+          folio,
+          fecha: new Date().toISOString(),
+          estado: 'pagada',
+          cajero_id: usuario?.id ?? null,
+          cajero_nombre: cajeroNombre,
+          subtotal: subtotalVenta,
+          descuento_total: descuentoVenta,
+          total: totalVenta,
+          costo_total_snapshot: costoTotal,
+          utilidad_bruta_snapshot: utilidadBruta,
+          margen_snapshot: margen,
+          corte_id: cajaAbierta?.id ?? null,
+          metodo_pago: 'efectivo',
+        },
+        detalle,
+      });
+
+      setOfflineCart([]);
+      await refrescarPendientes();
+      toast.success('Venta guardada. Se sincronizará cuando vuelva el internet.');
+    } catch (err) {
+      toast.error('No se pudo guardar la venta offline: ' + (err?.message || ''));
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -513,11 +665,13 @@ export default function VentaPage() {
   }, [cajaAbierta?.id, productos, addItem]);
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] bg-background pb-16 lg:pb-0">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-background">
+      <OfflineBanner isOffline={isOffline} sincronizando={sincronizando} ventasPendientes={ventasPendientes} />
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 pb-16 lg:pb-0">
       <div className="flex-1 flex flex-col p-3 lg:p-4 overflow-hidden gap-3">
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <BuscadorProducto productos={productos} onSelect={addToCart} onNotFound={(code) => setNoEncontradoCode(code)} />
+            <BuscadorProducto productos={productosUI} onSelect={addToCart} onNotFound={(code) => setNoEncontradoCode(code)} />
           </div>
           <button onClick={gated(() => setScannerOpen(true))} title="Escanear código de barras" className="skeu-btn-primary h-12 px-3 sm:px-4 rounded-xl flex items-center gap-1.5 font-bold text-sm flex-shrink-0">
             <Camera className="h-5 w-5" />
@@ -559,7 +713,7 @@ export default function VentaPage() {
         {!needsCaja && (
           <div className="flex-1 overflow-y-auto">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">
-              {productos.map((p) => (
+              {productosUI.map((p) => (
                 <button key={p.id} onClick={() => addToCart(p)} className="skeu-card flex flex-col p-3 text-left transition-all duration-150 hover:translate-y-[-1px] active:translate-y-[1px] active:shadow-sm" style={{ minHeight: '100px' }}>
                   {p.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -586,7 +740,7 @@ export default function VentaPage() {
             <button onClick={cancelSale} disabled={carrito.length === 0} className="skeu-btn-danger flex-1 h-12 rounded-xl font-bold text-sm flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
               <Trash2 className="h-4 w-4" /> Cancelar
             </button>
-            <button onClick={gated(() => setCobroOpen(true))} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-primary flex-[2] h-12 rounded-xl font-black text-base flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
+            <button onClick={gated(() => (isOffline ? handleCobroOffline() : setCobroOpen(true)))} disabled={carrito.length === 0 || isProcessing || (!isOffline && needsCaja)} className="skeu-btn-primary flex-[2] h-12 rounded-xl font-black text-base flex items-center justify-center gap-1 disabled:opacity-40 disabled:pointer-events-none transition-all">
               <DollarSign className="h-5 w-5" /> Cobrar {formatMoney(total, sym)}
             </button>
           </div>
@@ -596,7 +750,7 @@ export default function VentaPage() {
         </div>
       </div>
 
-      <MobileCartBar items={carrito} total={total} sym={sym} onUpdateQty={updateQty} onRemove={removeItem} onCobrar={gated(() => setCobroOpen(true))} onCancelar={() => clearCartShared()} disabled={carrito.length === 0 || needsCaja} isProcessing={isProcessing} />
+      <MobileCartBar items={carrito} total={total} sym={sym} onUpdateQty={updateQty} onRemove={removeItem} onCobrar={gated(() => (isOffline ? handleCobroOffline() : setCobroOpen(true)))} onCancelar={() => (isOffline ? setOfflineCart([]) : clearCartShared())} disabled={carrito.length === 0 || (!isOffline && needsCaja)} isProcessing={isProcessing} />
 
       <CobroDialog open={cobroOpen} onClose={() => setCobroOpen(false)} total={total} onConfirm={handleCobro} sym={sym} isProcessing={isProcessing} />
 
@@ -668,6 +822,7 @@ export default function VentaPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
