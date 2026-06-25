@@ -195,16 +195,6 @@ export default function CuentaPage() {
 
       <div className="skeu-panel p-5">
         <h2 className="font-bold text-foreground mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-primary" /> Sesión
-        </h2>
-        <p className="text-sm text-muted-foreground mb-3">Al cerrar sesión se limpiará el carrito local y los datos guardados en este dispositivo.</p>
-        <Button onClick={handleLogout} className="skeu-btn-danger w-full sm:w-auto">
-          <LogOut className="h-4 w-4 mr-1" /> Cerrar sesión
-        </Button>
-      </div>
-
-      <div className="skeu-panel p-5">
-        <h2 className="font-bold text-foreground mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
           <FileText className="h-4 w-4 text-primary" /> Privacidad y términos
         </h2>
         <div className="space-y-2">
@@ -225,6 +215,18 @@ export default function CuentaPage() {
           </p>
           <Button onClick={handleDeleteAllData} variant="outline" className="border-red-500/50 text-red-600 dark:text-red-400 hover:bg-red-500/10 w-full sm:w-auto">
             <Trash2 className="h-4 w-4 mr-1" /> Eliminar mis datos del POS
+          </Button>
+        </div>
+      </div>
+
+      <div className="border-t border-border pt-4">
+        <div className="skeu-panel p-5">
+          <h2 className="font-bold text-foreground mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
+            <LogOut className="h-4 w-4 text-red-600 dark:text-red-400" /> Cerrar sesión
+          </h2>
+          <p className="text-sm text-muted-foreground mb-3">Al cerrar sesión se limpiará el carrito local y los datos guardados en este dispositivo.</p>
+          <Button onClick={handleLogout} variant="destructive" className="w-full sm:w-auto">
+            <LogOut className="h-4 w-4 mr-1" /> Cerrar sesión
           </Button>
         </div>
       </div>

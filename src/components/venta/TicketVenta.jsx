@@ -7,6 +7,11 @@ const TicketVenta = forwardRef(({ venta, detalles, config }, ref) => {
   const sym = config?.simbolo_moneda || '$';
   const fecha = venta?.fecha ? new Date(venta.fecha) : new Date();
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const nombreCliente = (venta?.nombre_cliente || (
+    typeof venta?.notas === 'string' && venta.notas.startsWith('Cliente: ')
+      ? venta.notas.slice('Cliente: '.length).trim()
+      : ''
+  )).trim();
 
   useEffect(() => {
     const url = config?.qr_url?.trim();
@@ -80,6 +85,7 @@ const TicketVenta = forwardRef(({ venta, detalles, config }, ref) => {
         <div><strong>Folio:</strong> {venta?.folio}</div>
         <div><strong>Fecha:</strong> {fecha.toLocaleDateString('es-MX')} {fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</div>
         <div><strong>Cajero:</strong> {venta?.cajero_nombre || '-'}</div>
+        {nombreCliente && <div><strong>Cliente:</strong> {nombreCliente}</div>}
       </div>
 
       <div style={{ borderTop: '1px dashed #555', margin: '4px 0' }} />

@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,11 @@ export default function CobroDialog({ open, onClose, total, onConfirm, sym = '$'
   const [montoEfectivo, setMontoEfectivo] = useState('');
   const [montoTarjeta, setMontoTarjeta] = useState('');
   const [montoTransferencia, setMontoTransferencia] = useState('');
+  const [nombreCliente, setNombreCliente] = useState('');
+
+  useEffect(() => {
+    if (open) setNombreCliente('');
+  }, [open]);
 
   const cambio = metodo === 'efectivo' 
     ? Math.max(0, (parseFloat(montoRecibido) || 0) - total) 
@@ -37,6 +42,7 @@ export default function CobroDialog({ open, onClose, total, onConfirm, sym = '$'
   };
 
   const handleConfirm = () => {
+    const cliente = nombreCliente.trim();
     const data = {
       metodo_pago: metodo,
       monto_efectivo: metodo === 'efectivo' ? total : metodo === 'mixto' ? parseFloat(montoEfectivo) || 0 : 0,
@@ -44,6 +50,7 @@ export default function CobroDialog({ open, onClose, total, onConfirm, sym = '$'
       monto_transferencia: metodo === 'transferencia' ? total : metodo === 'mixto' ? parseFloat(montoTransferencia) || 0 : 0,
       monto_recibido: metodo === 'efectivo' ? parseFloat(montoRecibido) || 0 : total,
       cambio,
+      notas: cliente ? `Cliente: ${cliente}` : null,
     };
     onConfirm(data);
   };
@@ -58,6 +65,18 @@ export default function CobroDialog({ open, onClose, total, onConfirm, sym = '$'
         <div className="text-center py-3">
           <p className="text-sm text-muted-foreground">Total a cobrar</p>
           <p className="text-4xl font-bold text-primary mt-1">{formatMoney(total, sym)}</p>
+        </div>
+
+        <div>
+          <Label className="text-sm">Nombre del cliente</Label>
+          <Input
+            type="text"
+            placeholder="Opcional — para el ticket"
+            value={nombreCliente}
+            onChange={(e) => setNombreCliente(e.target.value)}
+            className="h-10 mt-1"
+            maxLength={80}
+          />
         </div>
 
         {/* Payment methods */}
