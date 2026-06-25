@@ -16,6 +16,7 @@ import { resolveProductByBarcode } from '@/lib/productLookup';
 import { formatMoney } from '@/utils/currency';
 import { generateFolio } from '@/utils/folioUtils';
 import { normalizeBarcode } from '@/utils/barcodeUtils';
+import { generarMensajeTicket } from '@/utils/whatsapp';
 import { playScanSuccess, playScanError, playSaleSuccess } from '@/utils/audioFeedback';
 import BuscadorProducto from '@/components/venta/BuscadorProducto';
 import CarritoVenta from '@/components/venta/CarritoVenta';
@@ -31,7 +32,7 @@ import AsignarCodigoDialog from '@/components/venta/AsignarCodigoDialog';
 import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera } from 'lucide-react';
+import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle } from 'lucide-react';
 import { useGatedAction } from '@/hooks/useGatedAction';
 
 export default function VentaPage() {
@@ -303,6 +304,15 @@ export default function VentaPage() {
     setTimeout(() => { win.print(); win.close(); }, 400);
   };
 
+  // Compartir el ticket de la venta recién completada por WhatsApp.
+  // Solo se invoca desde el modal de ticket (que ya requiere una venta completada).
+  // wa.me sin número abre el selector de chat: en móvil usa la app, en escritorio WhatsApp Web.
+  const shareWhatsApp = () => {
+    if (!lastVenta) return;
+    const mensaje = generarMensajeTicket(lastVenta, lastDetalles, config);
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer');
+  };
+
   const openVistaCliente = () => {
     const itemsView = carrito.map((i) => ({ nombre: i.nombre, cantidad: i.cantidad, precio: i.precio, subtotal: i.subtotal }));
     try { localStorage.setItem(KEY_CART, JSON.stringify({ items: itemsView, total, config })); } catch { /* noop */ }
@@ -481,6 +491,7 @@ export default function VentaPage() {
             <div className="no-print flex items-center justify-between px-4 py-3 bg-gray-900 text-white flex-shrink-0">
               <h2 className="font-bold text-sm">Ticket — {lastVenta.folio}</h2>
               <div className="flex gap-2">
+                <Button size="sm" onClick={shareWhatsApp} title="Compartir por WhatsApp" className="bg-[#25D366] hover:bg-[#1ebe5d] text-white h-9"><MessageCircle className="h-4 w-4 mr-1" /> WhatsApp</Button>
                 <Button size="sm" onClick={printTicket} className="bg-green-600 hover:bg-green-700 text-white h-9"><Printer className="h-4 w-4 mr-1" /> Imprimir</Button>
                 <Button size="sm" onClick={() => setShowTicket(false)} className="bg-gray-700 hover:bg-gray-600 text-white h-9">Cerrar</Button>
               </div>
