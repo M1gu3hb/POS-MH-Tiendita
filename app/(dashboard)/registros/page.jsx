@@ -9,15 +9,20 @@ import { getGastos, getCompras } from '@/lib/db/egresos';
 import { getCortes } from '@/lib/db/caja';
 import { getMovimientos } from '@/lib/db/inventario';
 import { getReportes, createReporte } from '@/lib/db/reportes';
+import { procesarDevolucion } from '@/lib/db/devoluciones';
 import { formatMoney } from '@/utils/currency';
 import { isDateInRange, getPeriodRange } from '@/utils/dateUtils';
 import LoadingState from '@/components/common/LoadingState';
 import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { BarChart2, FileText, TrendingUp, TrendingDown, DollarSign, ShoppingBag, Wallet, Banknote, CreditCard, ArrowRightLeft, Archive, Eye } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { BarChart2, FileText, TrendingUp, TrendingDown, DollarSign, ShoppingBag, Wallet, Banknote, CreditCard, ArrowRightLeft, Archive, Eye, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import ResumenFinancieroPDF from '@/components/registros/ResumenFinancieroPDF';
 import CortePDF from '@/components/registros/CortePDF';
@@ -33,6 +38,14 @@ export default function RegistrosPage() {
   const [showPDF, setShowPDF] = useState(false);
   const [cortePDFData, setCortePDFData] = useState(null);
   const [reporteAbierto, setReporteAbierto] = useState(null);
+  const [devolucionOpen, setDevolucionOpen] = useState(false);
+  const [ventaDevolucion, setVentaDevolucion] = useState(null);
+  const [devolucionItems, setDevolucionItems] = useState([]);
+  const [devolucionTipo, setDevolucionTipo] = useState('dinero');
+  const [devolucionMotivo, setDevolucionMotivo] = useState('');
+  const [regresaInventario, setRegresaInventario] = useState(true);
+  const [procesandoDevolucion, setProcesandoDevolucion] = useState(false);
+  const [devolucionMonto, setDevolucionMonto] = useState(null);
 
   const enabled = !!negocioId;
   const { data: ventas = [], isLoading: ventasLoading, isFetching: ventasFetching } = useQuery({ queryKey: ['registros-ventas', negocioId], queryFn: () => getVentas(negocioId, { limit: 500 }), enabled, placeholderData: (p) => p });
@@ -134,6 +147,94 @@ export default function RegistrosPage() {
       return;
     }
     setReporteAbierto({ ...rep, _snapshot: rep.datos_snapshot });
+  };
+
+  const abrirDevolucion = (venta) => {
+    const detalle = detallesVenta.filter((d) => d.venta_id === venta.id);
+    if (detalle.length === 0) {
+      toast.error('No se encontro el detalle de esta venta');
+      return;
+    }
+
+    setVentaDevolucion(venta);
+    setDevolucionItems(detalle.map((d) => {
+      const cantidad = Number(d.cantidad || 0);
+      const precio = Number(d.precio_unitario_snapshot ?? (cantidad > 0 ? (d.total || 0) / cantidad : 0));
+      return {
+        id: d.id,
+        selected: true,
+        producto_id: d.producto_id,
+        producto_nombre: d.producto_nombre,
+        cantidad_vendida: cantidad,
+        cantidad_devuelta: cantidad,
+        precio_unitario: precio,
+        unidad: d.unidad_venta || 'pieza',
+      };
+    }));
+    setDevolucionTipo('dinero');
+    setDevolucionMotivo('');
+    setRegresaInventario(true);
+    setDevolucionMonto(null);
+    setDevolucionOpen(true);
+  };
+
+  const updateDevolucionItem = (idx, field, value) => {
+    setDevolucionItems((items) => items.map((item, i) => (i === idx ? { ...item, [field]: value } : item)));
+  };
+
+  const montoDevolucion = devolucionItems.reduce((sum, item) => (
+    item.selected ? sum + (Number(item.cantidad_devuelta || 0) * Number(item.precio_unitario || 0)) : sum
+  ), 0);
+
+  const handleProcesarDevolucion = async () => {
+    if (!ventaDevolucion) return;
+    const motivo = devolucionMotivo.trim();
+    if (!motivo) {
+      toast.error('El motivo es requerido');
+      return;
+    }
+
+    const items = devolucionItems
+      .filter((item) => item.selected)
+      .map((item) => ({
+        producto_id: item.producto_id,
+        producto_nombre: item.producto_nombre,
+        cantidad_devuelta: Number(item.cantidad_devuelta || 0),
+        precio_unitario: Number(item.precio_unitario || 0),
+        regresa_a_inventario: regresaInventario && !!item.producto_id,
+      }));
+
+    if (items.length === 0) {
+      toast.error('Selecciona al menos un producto');
+      return;
+    }
+    if (items.some((item) => item.cantidad_devuelta <= 0)) {
+      toast.error('La cantidad a devolver debe ser mayor a cero');
+      return;
+    }
+    if (devolucionItems.some((item) => item.selected && Number(item.cantidad_devuelta || 0) > Number(item.cantidad_vendida || 0))) {
+      toast.error('No puedes devolver mas de lo vendido');
+      return;
+    }
+
+    setProcesandoDevolucion(true);
+    try {
+      const result = await procesarDevolucion({
+        venta_id: ventaDevolucion.id,
+        motivo,
+        tipo_devolucion: devolucionTipo,
+        items,
+      });
+      setDevolucionMonto(result.monto_devuelto);
+      queryClient.invalidateQueries({ queryKey: ['registros-ventas'] });
+      queryClient.invalidateQueries({ queryKey: ['registros-detalles-venta'] });
+      queryClient.invalidateQueries({ queryKey: ['registros-movimientos'] });
+      toast.success(`Devolucion procesada: ${formatMoney(result.monto_devuelto, sym)}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo procesar la devolucion');
+    } finally {
+      setProcesandoDevolucion(false);
+    }
   };
 
   return (
@@ -248,6 +349,7 @@ export default function RegistrosPage() {
                     <th className="text-center px-3 py-3 font-medium text-muted-foreground">Estado</th>
                     <th className="text-center px-3 py-3 font-medium text-muted-foreground">Método</th>
                     <th className="text-right px-4 py-3 font-medium text-muted-foreground">Total</th>
+                    <th className="text-center px-4 py-3 font-medium text-muted-foreground">Accion</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,6 +360,15 @@ export default function RegistrosPage() {
                       <td className="px-3 py-3 text-center"><Badge variant={v.estado === 'pagada' ? 'default' : v.estado === 'cancelada' ? 'destructive' : 'secondary'} className="text-xs">{v.estado}</Badge></td>
                       <td className="px-3 py-3 text-center capitalize text-muted-foreground text-xs">{v.metodo_pago}</td>
                       <td className="px-4 py-3 text-right font-semibold text-foreground tabular-nums">{formatMoney(v.total, sym)}</td>
+                      <td className="px-4 py-3 text-center">
+                        {v.estado === 'pagada' ? (
+                          <Button size="sm" variant="outline" className="skeu-btn-ghost h-8 text-xs" onClick={() => abrirDevolucion(v)}>
+                            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Devolver
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -401,6 +512,100 @@ export default function RegistrosPage() {
           config={config} sym={sym} onClose={() => setReporteAbierto(null)}
         />
       )}
+
+      <Dialog open={devolucionOpen} onOpenChange={(open) => !procesandoDevolucion && setDevolucionOpen(open)}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-primary" /> Devolver venta {ventaDevolucion?.folio}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Productos de la venta</p>
+              <div className="space-y-2">
+                {devolucionItems.map((item, idx) => (
+                  <div key={item.id} className="rounded-lg border border-border bg-muted/20 p-3">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={item.selected}
+                        onCheckedChange={(checked) => updateDevolucionItem(idx, 'selected', checked === true)}
+                        className="mt-1"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm text-foreground truncate">{item.producto_nombre}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Vendido: {item.cantidad_vendida} {item.unidad} · {formatMoney(item.precio_unitario, sym)}
+                        </p>
+                      </div>
+                      <div className="w-28">
+                        <p className="text-[10px] font-semibold text-muted-foreground mb-1">Cantidad</p>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={item.cantidad_vendida}
+                          step="0.001"
+                          value={item.cantidad_devuelta}
+                          disabled={!item.selected}
+                          onChange={(e) => updateDevolucionItem(idx, 'cantidad_devuelta', e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">¿Qué tipo de devolución?</p>
+                <Select value={devolucionTipo} onValueChange={setDevolucionTipo}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="dinero">Dinero en efectivo</SelectItem>
+                    <SelectItem value="credito_siguiente_compra">Crédito para siguiente compra</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-sm font-medium text-foreground">
+                <Checkbox checked={regresaInventario} onCheckedChange={(checked) => setRegresaInventario(checked === true)} />
+                ¿Regresar al inventario?
+              </label>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground mb-1">Motivo</p>
+              <Textarea value={devolucionMotivo} onChange={(e) => setDevolucionMotivo(e.target.value)} placeholder="Motivo de la devolución" />
+            </div>
+
+            <div className="rounded-lg bg-muted p-3 flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">Monto a devolver</span>
+              <span className="text-lg font-black text-foreground tabular-nums">{formatMoney(montoDevolucion, sym)}</span>
+            </div>
+
+            {devolucionMonto !== null && (
+              <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm font-semibold text-green-700 dark:text-green-300">
+                Devolución procesada por {formatMoney(devolucionMonto, sym)}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            {devolucionMonto !== null ? (
+              <Button onClick={() => setDevolucionOpen(false)} className="skeu-btn-primary">Cerrar</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setDevolucionOpen(false)} disabled={procesandoDevolucion}>Cancelar</Button>
+                <Button onClick={handleProcesarDevolucion} disabled={procesandoDevolucion} className="skeu-btn-primary">
+                  {procesandoDevolucion ? 'Procesando...' : 'Procesar devolución'}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
