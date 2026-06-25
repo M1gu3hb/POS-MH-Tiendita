@@ -58,9 +58,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [mobileOpen]);
-
-  const hideQuickNav = pathname.startsWith('/venta');
-
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {mobileOpen && (
@@ -190,10 +187,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">{children}</main>
       </div>
 
-      {!hideQuickNav && <MobileQuickNav />}
+      <MobileQuickNav onOpenMenu={() => setMobileOpen(true)} />
     </div>
   );
 }

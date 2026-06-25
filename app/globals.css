@@ -300,3 +300,11 @@
     visibility: hidden !important;
   }
 }
+
+@media (max-width: 767px) {
+  /* Asegurar padding horizontal de mínimo 16px (1rem) en contenedores de página en móvil */
+  main > * {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+}
