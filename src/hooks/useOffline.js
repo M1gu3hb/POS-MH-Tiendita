@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { getVentasPendientes, sincronizarVentas } from '@/lib/offline/ventas';
 
 /**
@@ -26,7 +27,13 @@ export function useOffline() {
   const sincronizar = useCallback(async () => {
     setSincronizando(true);
     try {
-      await sincronizarVentas();
+      const { sincronizadas, fallidas } = await sincronizarVentas();
+      if (sincronizadas > 0) {
+        toast.success(`${sincronizadas} ${sincronizadas === 1 ? 'venta sincronizada' : 'ventas sincronizadas'}`);
+      }
+      if (fallidas > 0) {
+        toast.error(`${fallidas} ${fallidas === 1 ? 'venta no se pudo sincronizar' : 'ventas no se pudieron sincronizar'}`);
+      }
     } catch {
       /* noop */
     } finally {
