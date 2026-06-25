@@ -230,22 +230,19 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
 
 ## Detectados en reportes colaboradores 010–012 (2026-06-25)
 
-### 🔴 IMPORTANTE — Migración `007_qr_url` sin aplicar (repo ≠ BD)
-- [ ] **`007_qr_url.sql` no está aplicada a la BD real** _(reporte 011, codex — verificado por auditoría)_
-  El código ya referencia `config.qr_url` (`src/lib/db/configuracion.ts`, `configuracion/page.jsx`,
-  `TicketVenta.jsx`), pero la columna `configuracion_negocio.qr_url` **no existe en la BD**
-  (`list_migrations` muestra solo 001–006; el reporte confirma error `42703`). Efecto: **guardar la URL
-  del QR fallará en runtime** (`updateConfiguracion` con `qr_url` → `42703`) y el QR no se renderiza
-  (lectura `select('*')` no trae la columna → `qr_url` undefined, degradación elegante). La feature de
-  QR queda **no funcional** hasta aplicar la migración. **Acción:** aplicar `007_qr_url.sql` a
-  `lisjbutidntalmobgjso` (SQL Editor) y reconfirmar repo == BD.
+### Migración `007_qr_url` — RESUELTO
+- [x] **`007_qr_url.sql` aplicada a la BD** _(RESUELTO 2026-06-25 — verificado vía `list_migrations`)_
+  La migración ya figura en el ledger (`version 20260625041237`); la columna
+  `configuracion_negocio.qr_url` existe. La feature de QR queda funcional y **repo == BD** restaurado.
+  (Histórico: el reporte 011 la dejó sin aplicar; se aplicó después, confirmado por el reporte 014 y
+  por esta auditoría.)
 
 ### Tickets / WhatsApp (reporte 010 — claude-code)
-- [ ] **El ticket de WhatsApp muestra 'Mi Tienda' en vez del nombre real** _(reporte 010)_
-  `generarMensajeTicket` usa `config.nombre`, que no existe en `configuracion_negocio` (el nombre vive
-  en `negocios.nombre`), así que cae al fallback 'Mi Tienda'. Es la misma limitación que ya tiene
-  `TicketVenta.jsx` (`config?.nombre_negocio`). **Acción:** pasar `negocio.nombre` (vía `useNegocio`,
-  ya existente desde el reporte 006) a `generarMensajeTicket` en una tarea con acceso a esos archivos.
+- [x] **El ticket de WhatsApp muestra 'Mi Tienda' en vez del nombre real** _(RESUELTO 2026-06-25, reporte 013 PASO 0)_
+  El #013 añadió el parámetro `negocioNombre` a `generarMensajeTicket` (fallback `negocioNombre ||
+  config?.nombre || 'Mi Tienda'`) y en `venta/page.jsx` pasa `negocio?.nombre` vía `useNegocio`.
+  Verificado en `src/utils/whatsapp.ts` (líneas 51, 57). El ticket de WhatsApp ya muestra el nombre real.
+  Nota: `TicketVenta.jsx` (impreso) sigue con `config?.nombre_negocio` — ese sí persiste (ver abajo).
 
 ### Dependencias / entorno (reportes 011, 012)
 - [ ] **`npm install`/`audit` reporta 7 vulnerabilidades (3 moderadas, 4 altas)** _(reporte 011)_
@@ -264,4 +261,48 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   tareas simultáneas. **Acción:** evitar solapar archivos entre tareas concurrentes; serializar las que
   toquen `TicketVenta.jsx` o `venta/page.jsx`.
 
-<!-- Última actualización: 2026-06-25 — Auditoría de reportes colaboradores 010–012 -->
+## Detectados en reportes colaboradores 013–015 (2026-06-25)
+
+> **Migraciones: TODAS aplicadas.** Ledger de `lisjbutidntalmobgjso` verificado vía `list_migrations`:
+> 001–010 presentes, incl. `008_fiado`, `009_devoluciones`, `010_historial_precios`. **No hay
+> migraciones pendientes.** Disco (10 archivos) == BD (10 entradas).
+
+### Fiado / crédito (reporte 013 — claude-code)
+- [ ] **[HIGH] `registrarCargo`/`registrarAbono` no son atómicos** _(reporte 013)_
+  Sin RPC, son insert-movimiento + update-saldo (read-modify-write) en 2 operaciones. Cargos/abonos
+  concurrentes al mismo cliente pueden competir y descuadrar el `saldo_pendiente`. Aceptable para una
+  tiendita de 1 cajero. **Acción:** función plpgsql `registrar_movimiento_fiado` para atomicidad real.
+- [ ] **Venta a fiado no valida `limite_credito`** _(reporte 013)_
+  Se puede vender a fiado por encima del límite del cliente (el límite solo se muestra informativo).
+  No se pidió bloquear. **Acción:** validar saldo + nuevo cargo contra `limite_credito` si se desea gating.
+- [ ] **"Cobrar a fiado" no está en la barra de carrito móvil** _(reporte 013)_
+  El botón está solo en el footer de escritorio (`venta/page.jsx`); `MobileCartBar.jsx` no estaba en
+  los archivos permitidos. **Acción:** añadir la opción de fiado en móvil.
+- [ ] **Opción de fiado fuera de `CobroDialog`** _(reporte 013)_
+  La spec pedía la opción dentro de `CobroDialog.jsx`, pero no estaba permitido tocarlo; quedó como
+  botón/selector propio en `venta/page.jsx`. Mismo resultado funcional. **Acción:** consolidar en
+  `CobroDialog` si se quiere un único punto de cobro.
+- [ ] **`TicketVenta.jsx` (impreso) aún muestra `config?.nombre_negocio`** _(auditoría 013)_
+  El fix del nombre real fue solo para el ticket de WhatsApp; el ticket impreso sigue con el campo
+  inexistente `nombre_negocio`. **Acción:** pasar `negocio.nombre` también al `TicketVenta`.
+
+### Devoluciones (reporte 014 — codex)
+- [ ] **`procesarDevolucion` depende de `/api/devoluciones` (server-side)** _(reporte 014)_
+  Bien encapsulado (valida sesión/negocio, venta `pagada`, repone stock + kardex, escribe `audit_log`).
+  Sin caveat de arquitectura. Falta **prueba runtime** (devolver una venta real, confirmar reposición
+  de stock y registro de auditoría).
+
+### 🟠 Coordinación / migraciones cruzadas (reportes 014 y 015)
+- [ ] **`009_devoluciones` la aplicó el #015 (antigravity), no su autor #014 (codex)** _(auditoría)_
+  El #014 dejó `009` sin aplicar (sin credenciales/CLI). El #015, fuera de su tarea (era
+  `010_historial_precios`), aplicó `009` "vía `psql`" para evitar runtime roto de devoluciones.
+  El ledger confirma ambas aplicadas. **Discrepancia a aclarar:** el #014 reportó que NO había acceso
+  Postgres/credenciales, pero el #015 sí aplicó DDL por `psql` — conviene confirmar qué credenciales se
+  usaron y quién las tiene. **Riesgo de proceso:** un agente aplicando migraciones de otro a la BD real.
+
+### Entorno (reportes 013, 014, 015)
+- [ ] **Builds concurrentes corrompen `.next/` (recurrente)** _(reportes 013, 014, 015)_
+  Varios agentes corriendo `next build` a la vez causan `ENOENT`/`ENOTEMPTY` en `.next`. Se resuelve con
+  `.next` limpio y sin builds concurrentes. No es bug de código. **Acción:** serializar builds.
+
+<!-- Última actualización: 2026-06-25 — Auditoría de reportes colaboradores 013–015 -->

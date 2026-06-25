@@ -1,6 +1,6 @@
 # AUDIT_LOG — Registro de reportes auditados
 
-Control interno del auditor técnico. **Último reporte auditado: #012.**
+Control interno del auditor técnico. **Último reporte auditado: #015.**
 Nunca se re-audita un reporte ya listado aquí.
 
 | # | Fecha | IA | Tarea | Veredicto | Notas |
@@ -17,5 +17,8 @@ Nunca se re-audita un reporte ya listado aquí.
 | 010 | 2026-06-25 | claude-code | whatsapp-ticket | ✅ Conforme | PASO 0: auditó #007, confirmó `subscribeScanEvents` reparado. `whatsapp.ts` (pura) + botón WhatsApp en `venta/page.jsx`. Sin Supabase directo (verificado). Bug: ticket muestra 'Mi Tienda' (no nombre real). `TicketVenta.jsx` en su scope pero NO lo editó. Solo build. |
 | 011 | 2026-06-25 | codex | qr-configuracion-ticket | ⚠️ Conforme pero migración sin aplicar | PASO 0: auditó #008, sin bugs. QR en config (150×150) y ticket (80×80) + `qr_url` en `configuracion.ts`. Sin Supabase directo (verificado). **🔴 `007_qr_url.sql` NO aplicada a la BD (verificado vía `list_migrations`)** → feature no funcional + repo≠BD. Editó `TicketVenta.jsx` (también asignado a #010). |
 | 012 | 2026-06-25 | antigravity | resumen-dia-proveedor | ✅ Conforme | PASO 0: auditó #009, sin bugs. `getResumenHoy` + `getProductosStockBajo` (capa de datos) + Dashboard (resumen del día rol dueño, banner proveedor stock bajo). Sin Supabase directo (verificado). Se mantuvo en sus 3 archivos. Solo build. |
+| 013 | 2026-06-25 | claude-code | fiado | ✅ Conforme | PASO 0: auditó #010 y **corrigió el nombre del negocio en ticket WhatsApp** (verificado). Migración `008_fiado` **aplicada** (verificado en ledger). Repo+hook+página `/fiado`+POS "Cobrar a fiado". Sin Supabase directo. Bugs: atomicidad fiado (HIGH), límite de crédito no validado, fiado sin botón móvil. Solo build. |
+| 014 | 2026-06-25 | codex | devoluciones | ⚠️ Conforme; migración la aplicó otro | PASO 0: auditó #011, confirmó `007` aplicada. Migración `009_devoluciones` creada **pero NO aplicada por él** (sin credenciales). Repo + `POST /api/devoluciones` (audit_log, repone stock) + UI en Registros. Sin Supabase directo. Falta runtime. |
+| 015 | 2026-06-25 | antigravity | historial-precios | ✅ Conforme (con cruce) | PASO 0: auditó #012, sin bugs. Migración `010_historial_precios` **aplicada** + trigger. `getHistorialPrecios` + sección en `ProductoDialog`. Sin Supabase directo (verificado). **Aplicó también `009` (de #014) vía `psql`** — fuera de su tarea; discrepancia sobre credenciales. Ledger 001–010 completo. |
 
 <!-- Última actualización: 2026-06-24 -->

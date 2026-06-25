@@ -4,6 +4,38 @@ Formato: cada entrada con fecha y los cambios significativos de la fase.
 
 ---
 
+## 2026-06-25 — Features colaboradores (reportes #013–#015) — auditado
+
+Tres features. `tsc`/`next build` en verde; sin Supabase directo en componentes (verificado).
+**Migraciones: todas aplicadas** — ledger 001–010 confirmado vía `list_migrations` (repo == BD).
+Cada agente auditó su propio reporte previo (013→010, 014→011, 015→012).
+
+- **#013 (claude-code) — Sistema de fiado / crédito a clientes.** Migración `008_fiado.sql`
+  (**aplicada y verificada**): tablas `clientes_fiado` y `movimientos_fiado`, RLS por negocio, trigger
+  `updated_at`, y `ventas_metodo_pago_check` ampliado con `'fiado'`. Repo `src/lib/db/fiado.ts` +
+  hook `useFiado.js`. Página `/fiado` (tabs Clientes/Resumen, alta, historial, abonos; Resumen solo
+  rol dueño) + link en el sidebar. En el POS, botón "Cobrar a fiado" → crea venta con
+  `metodo_pago='fiado'`, descuenta stock/kardex y registra el cargo; el ticket muestra
+  "Fiado - <cliente>". **PASO 0:** corrigió el nombre del negocio en el ticket de WhatsApp (parámetro
+  `negocioNombre` vía `useNegocio`) — verificado.
+- **#014 (codex) — Devoluciones simples.** Migración `009_devoluciones.sql` (tablas `devoluciones` y
+  `detalle_devoluciones` + RLS). Repo `src/lib/db/devoluciones.ts` + endpoint `POST /api/devoluciones`
+  (valida sesión/negocio, venta `pagada`, repone stock + `movimientos_inventario` tipo `devolucion`,
+  escribe `audit_log`). Botón "Devolver" en Registros (solo ventas pagadas) + Dialog de selección de
+  productos/cantidades/motivo/regreso a inventario. La migración `009` quedó sin aplicar por el #014 y
+  **la aplicó el #015** (ver nota).
+- **#015 (antigravity) — Historial de precios.** Migración `010_historial_precios.sql` (**aplicada**):
+  tabla `historial_precios` + RLS + trigger `productos_precio_changed` que registra cambios de
+  `precio_venta`/`costo_unitario`. `getHistorialPrecios(productoId, negocioId)` (últimos 20) en
+  `productos.ts`. Sección colapsable "Historial de precios" en `ProductoDialog` (modo edición), tabla
+  con precios/costos anterior↔nuevo, o "Sin cambios de precio registrados".
+
+> Nota de auditoría: el #015 aplicó la migración `009` (de #014) a la BD real, fuera de su tarea, para
+> evitar runtime roto — hay discrepancia sobre el acceso `psql` (el #014 reportó no tener credenciales).
+> Verificación a nivel build + introspección de BD; falta runtime (fiado, devoluciones, historial).
+
+---
+
 ## 2026-06-25 — Features colaboradores (reportes #010–#012) — auditado
 
 Tres tareas de feature concurrentes. `tsc`/`next build` en verde; sin Supabase directo en componentes

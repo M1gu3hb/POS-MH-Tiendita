@@ -8,9 +8,14 @@ Diagrama de capas y flujo de datos del proyecto migrado.
                          ┌─────────────────────────────────────┐
    Navegador (cliente)   │  Componentes / Páginas ("use client")│
                          │  hooks (TanStack Query)              │
-                         └───────────────┬─────────────────────┘
-                                         │ llaman a…
-                         ┌───────────────▼─────────────────────┐
+                         └───────────────┬──────────┬──────────┘
+                                         │          │
+                         ┌───────────────▼┐        ┌▼──────────────────┐
+   Capa Offline          │ Service Worker │        │ IndexedDB         │
+   & PWA                 │ (Offline Cache)│        │ (Local Cache/Sync)│
+                         └───────────────┬┘        └┬──────────────────┘
+                                         │ llaman a…│
+                         ┌───────────────▼──────────▼──────────┐
    Capa de datos         │  src/lib/db/*  (Repositorios)        │
    (única que toca DB)   │  productos.ts, configuracion.ts, …   │
                          └───────────────┬─────────────────────┘
@@ -75,17 +80,18 @@ Diagrama de capas y flujo de datos del proyecto migrado.
 - Código server-only (`supabase-server.ts`, `audit.ts`) marcado con `import 'server-only'`.
 - Sin `any`: tipos de dominio en `src/lib/db/types.ts`, resultados vía `.returns<T>()`.
 
-## Estado de despliegue (2026-06-24)
+## Estado de despliegue (2026-06-25)
 
 - **Supabase conectado** (proyecto `lisjbutidntalmobgjso`); `.env.local` con claves reales.
-- **4 migraciones aplicadas:** `001_initial_schema`, `002_rls`, `003_functions` (RPC `registrar_negocio`
-  endurecida), `004_storage_realtime`. Triggers de `updated_at` creados.
+- **10 migraciones aplicadas:** `001_initial_schema`, `002_rls`, `003_functions` (RPC `registrar_negocio`
+  endurecida), `004_storage_realtime`, `005_rls_cajeros`, `006_top_productos`, `007_qr_url`, `008_fiado`,
+  `009_devoluciones`, `010_historial_precios`. Triggers de `updated_at` verificados y activos.
 - **Storage:** bucket público `negocio-assets` (+ políticas) listo para logos/imágenes.
 - **Realtime:** publicación `supabase_realtime` incluye `scan_events`, `carrito_items`, `carritos_activos`.
-- **Verificado contra BD real:** registro + login y el flujo de venta completo (productos → caja →
-  venta efectivo → stock → cierre).
+- **Verificado contra BD real:** registro + login, el flujo de venta completo (productos → caja →
+  venta efectivo → stock → cierre), historial de precios, fiados, devoluciones, e integración de QR y WhatsApp.
 - **GitHub:** `M1gu3hb/POS-MH-Tiendita`, rama `main`.
 
 Resumen de alto nivel para lectura rápida: [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-<!-- Última actualización: 2026-06-24 — Sesión de migración Base44 → Next.js 14 + Supabase -->
+<!-- Última actualización: 2026-06-25 — Limpieza Fase 6 y preparación para deploy -->
