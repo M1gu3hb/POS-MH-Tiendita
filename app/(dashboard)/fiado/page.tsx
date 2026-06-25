@@ -28,12 +28,13 @@ export default function FiadoPage() {
 
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
-  const [limite, setLimite] = useState('500');
   const [notas, setNotas] = useState('');
   const [savingCliente, setSavingCliente] = useState(false);
 
   const [montoAbono, setMontoAbono] = useState('');
   const [savingAbono, setSavingAbono] = useState(false);
+  const [liquidarOpen, setLiquidarOpen] = useState(false);
+  const [savingLiquidar, setSavingLiquidar] = useState(false);
 
   const selectedCliente = clientes.find((c) => c.id === selectedId) || null;
 
@@ -60,14 +61,12 @@ export default function FiadoPage() {
       const nuevo = await crearCliente({
         nombre: nombre.trim(),
         telefono: telefono.trim() || null,
-        limite_credito: parseFloat(limite) || 500,
         notas: notas.trim() || null,
       });
       toast.success('Cliente creado');
       setNuevoOpen(false);
       setNombre('');
       setTelefono('');
-      setLimite('500');
       setNotas('');
       setSelectedId(nuevo.id);
     } catch (err) {
@@ -93,6 +92,20 @@ export default function FiadoPage() {
       toast.error('No se pudo registrar el abono', { description: getErrorMessage(err) });
     } finally {
       setSavingAbono(false);
+    }
+  };
+
+  const handleLiquidar = async () => {
+    if (!selectedId || !selectedCliente || Number(selectedCliente.saldo_pendiente) <= 0) return;
+    setSavingLiquidar(true);
+    try {
+      await abonar(selectedId, Number(selectedCliente.saldo_pendiente));
+      toast.success('Saldo liquidado');
+      setLiquidarOpen(false);
+    } catch (err) {
+      toast.error('No se pudo liquidar', { description: getErrorMessage(err) });
+    } finally {
+      setSavingLiquidar(false);
     }
   };
 
@@ -175,9 +188,6 @@ export default function FiadoPage() {
                     {selectedCliente.telefono && (
                       <p className="text-xs text-muted-foreground">{selectedCliente.telefono}</p>
                     )}
-                    <p className="text-xs text-muted-foreground">
-                      Límite: {formatMoney(selectedCliente.limite_credito, sym)}
-                    </p>
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs text-muted-foreground">Saldo</p>
@@ -187,12 +197,21 @@ export default function FiadoPage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setAbonoOpen(true)}
-                  className="skeu-btn-primary w-full h-10 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 mb-3"
-                >
-                  <ArrowDownCircle className="h-4 w-4" /> Registrar abono
-                </button>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <button
+                    onClick={() => setAbonoOpen(true)}
+                    className="skeu-btn-primary h-10 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
+                  >
+                    <ArrowDownCircle className="h-4 w-4" /> Abonar
+                  </button>
+                  <button
+                    onClick={() => setLiquidarOpen(true)}
+                    disabled={Number(selectedCliente.saldo_pendiente) <= 0}
+                    className="skeu-btn-ghost h-10 rounded-xl font-bold text-sm text-foreground flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    Liquidar todo
+                  </button>
+                </div>
 
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wide mb-1">Historial</h3>
                 {movimientos.length === 0 ? (
@@ -285,15 +304,6 @@ export default function FiadoPage() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium text-foreground">Límite de crédito</label>
-                <input
-                  type="number"
-                  value={limite}
-                  onChange={(e) => setLimite(e.target.value)}
-                  className="skeu-input w-full rounded-md bg-card px-3 py-2 text-foreground outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-              <div className="space-y-1">
                 <label className="text-sm font-medium text-foreground">Notas</label>
                 <input
                   value={notas}
@@ -341,6 +351,24 @@ export default function FiadoPage() {
               <button onClick={() => setAbonoOpen(false)} className="skeu-btn-ghost flex-1 h-10 rounded-xl font-bold text-sm text-foreground">Cancelar</button>
               <button onClick={handleAbono} disabled={savingAbono} className="skeu-btn-primary flex-1 h-10 rounded-xl font-bold text-sm disabled:opacity-50">
                 {savingAbono ? 'Guardando…' : 'Registrar abono'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Liquidar todo */}
+      {liquidarOpen && selectedCliente && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setLiquidarOpen(false)}>
+          <div className="skeu-card w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-foreground mb-2">Liquidar todo</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              ¿Registrar el abono completo de {formatMoney(selectedCliente.saldo_pendiente, sym)} para {selectedCliente.nombre}? Su saldo quedará en $0.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setLiquidarOpen(false)} className="skeu-btn-ghost flex-1 h-10 rounded-xl font-bold text-sm text-foreground">Cancelar</button>
+              <button onClick={handleLiquidar} disabled={savingLiquidar} className="skeu-btn-primary flex-1 h-10 rounded-xl font-bold text-sm disabled:opacity-50">
+                {savingLiquidar ? 'Liquidando…' : 'Liquidar todo'}
               </button>
             </div>
           </div>

@@ -40,14 +40,14 @@ import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
 import OfflineBanner from '@/components/venta/OfflineBanner';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle, CreditCard } from 'lucide-react';
+import { ShoppingCart, DollarSign, Trash2, Monitor, Printer, Lock, DoorClosed, Camera, MessageCircle, CreditCard, UserPlus, X } from 'lucide-react';
 import { useGatedAction } from '@/hooks/useGatedAction';
 
 export default function VentaPage() {
   const { negocioId, usuario } = useAuth();
   const { config } = useConfig();
   const { negocio } = useNegocio();
-  const { clientes: fiadoClientes } = useFiado();
+  const { clientes: fiadoClientes, crearCliente: crearClienteFiado } = useFiado();
   const { cajaAbierta, isLoading: cajaLoading, refetch: refetchCaja } = useCajaAbierta();
   const cajeroNombre = usuario?.nombre_visible || 'Cajero';
 
@@ -87,6 +87,13 @@ export default function VentaPage() {
   const [scanFeedback, setScanFeedback] = useState(null);
   const [fiadoOpen, setFiadoOpen] = useState(false);
   const [fiadoSearch, setFiadoSearch] = useState('');
+  // Flujo de fiado desde el POS: selección de cliente o alta inline.
+  const [fiadoSelectedCliente, setFiadoSelectedCliente] = useState(null);
+  const [fiadoCreating, setFiadoCreating] = useState(false);
+  const [fiadoNewNombre, setFiadoNewNombre] = useState('');
+  const [fiadoNewTelefono, setFiadoNewTelefono] = useState('');
+  const [fiadoNewNotas, setFiadoNewNotas] = useState('');
+  const [fiadoSavingCliente, setFiadoSavingCliente] = useState(false);
   const processedEventIdsRef = useRef(new Set());
 
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias', negocioId], queryFn: () => getCategorias(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
@@ -451,7 +458,46 @@ export default function VentaPage() {
     }
   };
 
-  // Cobro a FIADO: crea la venta con metodo_pago='fiado' y registra el cargo al
+  const cerrarFiadoModal = () => {
+    setFiadoOpen(false);
+    setFiadoSelectedCliente(null);
+    setFiadoCreating(false);
+    setFiadoSearch('');
+    setFiadoNewNombre('');
+    setFiadoNewTelefono('');
+    setFiadoNewNotas('');
+  };
+
+  // Alta de cliente de fiado INLINE desde el POS (sin navegar). Solo nombre/teléfono/
+  // notas (sin límite de crédito). Al crear, lo selecciona para confirmar el fiado.
+  const handleCrearClienteFiado = async () => {
+    const nombre = fiadoNewNombre.trim();
+    if (!nombre) {
+      toast.error('El nombre es requerido');
+      return;
+    }
+    setFiadoSavingCliente(true);
+    try {
+      const nuevo = await crearClienteFiado({
+        nombre,
+        telefono: fiadoNewTelefono.trim() || null,
+        notas: fiadoNewNotas.trim() || null,
+      });
+      setFiadoSelectedCliente(nuevo);
+      setFiadoCreating(false);
+      setFiadoNewNombre('');
+      setFiadoNewTelefono('');
+      setFiadoNewNotas('');
+      toast.success(`Cliente "${nombre}" creado`);
+    } catch (err) {
+      toast.error('No se pudo crear el cliente', { description: err?.message });
+    } finally {
+      setFiadoSavingCliente(false);
+    }
+  };
+
+  // Cobro a FIADO: crea la venta con metodo_pago='fiado' (igual que efectivo:
+  // createVenta + ajustarStock → descuenta stock + kardex) y registra el cargo al
   // cliente. Función separada para no alterar el handleCobro existente (efectivo/
   // tarjeta/transferencia/mixto). CobroDialog no se modifica (fuera de los archivos
   // permitidos esta ronda); el fiado entra por su propio botón + selector.
@@ -539,10 +585,11 @@ export default function VentaPage() {
       setLastVenta({ ...venta, fiado_cliente_nombre: cliente.nombre });
       setLastDetalles(detalle);
       await cerrarVentaCarrito();
-      setFiadoOpen(false);
+      cerrarFiadoModal();
       setShowTicket(true);
       playSaleSuccess();
-      toast.success(`Venta ${folio} a fiado de ${cliente.nombre}`);
+      const nuevoSaldo = Number(cliente.saldo_pendiente || 0) + totalVenta;
+      toast.success(`Fiado registrado para ${cliente.nombre}. Debe: ${formatMoney(nuevoSaldo, sym)}`);
 
       ['ventas-caja', 'productos-pos', 'productos-dashboard', 'caja-cortes', 'dashboard-cortes', 'registros-ventas', 'fiado-clientes'].forEach((k) =>
         queryClient.invalidateQueries({ queryKey: [k] }),
@@ -754,8 +801,8 @@ export default function VentaPage() {
               <DollarSign className="h-5 w-5" /> Cobrar {formatMoney(total, sym)}
             </button>
           </div>
-          <button onClick={gated(() => setFiadoOpen(true))} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-ghost h-10 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 text-foreground disabled:opacity-40 disabled:pointer-events-none transition-all">
-            <CreditCard className="h-4 w-4" /> Cobrar a fiado
+          <button onClick={gated(() => { setFiadoSelectedCliente(null); setFiadoCreating(false); setFiadoSearch(''); setFiadoOpen(true); })} disabled={carrito.length === 0 || needsCaja || isProcessing} className="skeu-btn-ghost h-10 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 text-foreground disabled:opacity-40 disabled:pointer-events-none transition-all">
+            <CreditCard className="h-4 w-4" /> Fiado
           </button>
         </div>
       </div>
@@ -806,37 +853,80 @@ export default function VentaPage() {
       <CierreCajaDialog open={cierreOpen} onClose={() => setCierreOpen(false)} cajaAbierta={cajaAbierta} ventas={[]} gastos={[]} onSuccess={() => { setCierreOpen(false); refetchCaja(); ['caja-abierta', 'caja-cortes', 'registros-cortes', 'reportes-generados'].forEach((k) => queryClient.invalidateQueries({ queryKey: [k] })); }} />
 
       {fiadoOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print" onClick={() => setFiadoOpen(false)}>
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print" onClick={cerrarFiadoModal}>
           <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <h2 className="font-bold text-sm text-foreground">Cobrar a fiado · {formatMoney(total, sym)}</h2>
-              <button onClick={() => setFiadoOpen(false)} aria-label="Cerrar" className="text-muted-foreground hover:text-foreground"><Trash2 className="h-4 w-4" /></button>
+              <h2 className="font-bold text-sm text-foreground">Fiado · {formatMoney(total, sym)}</h2>
+              <button onClick={cerrarFiadoModal} aria-label="Cerrar" className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
             </div>
-            <div className="p-3">
-              <input
-                value={fiadoSearch}
-                onChange={(e) => setFiadoSearch(e.target.value)}
-                placeholder="Buscar cliente…"
-                className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring mb-2"
-              />
-              <div className="max-h-72 overflow-y-auto">
-                {fiadoClientes.filter((c) => c.nombre.toLowerCase().includes(fiadoSearch.toLowerCase())).length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-3 text-center italic">No hay clientes. Créalos en la sección Fiado.</p>
-                ) : (
-                  <ul className="divide-y divide-border">
-                    {fiadoClientes
-                      .filter((c) => c.nombre.toLowerCase().includes(fiadoSearch.toLowerCase()))
-                      .map((c) => (
-                        <li key={c.id}>
-                          <button onClick={() => handleCobroFiado(c)} disabled={isProcessing} className="w-full text-left py-2.5 px-2 flex items-center justify-between gap-2 hover:bg-muted/50 rounded-lg disabled:opacity-50">
-                            <span className="text-sm font-semibold text-foreground truncate">{c.nombre}</span>
-                            <span className={`text-xs font-bold tabular-nums ${c.saldo_pendiente > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatMoney(c.saldo_pendiente, sym)}</span>
-                          </button>
-                        </li>
-                      ))}
-                  </ul>
-                )}
-              </div>
+            <div className="p-3 overflow-y-auto">
+              {fiadoSelectedCliente ? (
+                /* Cliente seleccionado → confirmar */
+                <div className="space-y-3">
+                  <div className="skeu-card p-3 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-foreground truncate">{fiadoSelectedCliente.nombre}</p>
+                      {fiadoSelectedCliente.telefono && <p className="text-xs text-muted-foreground">{fiadoSelectedCliente.telefono}</p>}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-[11px] text-muted-foreground">Saldo actual</p>
+                      <p className={`text-sm font-bold tabular-nums ${fiadoSelectedCliente.saldo_pendiente > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatMoney(fiadoSelectedCliente.saldo_pendiente, sym)}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => handleCobroFiado(fiadoSelectedCliente)} disabled={isProcessing || carrito.length === 0} className="skeu-btn-primary w-full h-11 rounded-xl font-black text-sm disabled:opacity-50">
+                    {isProcessing ? 'Procesando…' : `Confirmar fiado a ${fiadoSelectedCliente.nombre}`}
+                  </button>
+                  <button onClick={() => setFiadoSelectedCliente(null)} className="skeu-btn-ghost w-full h-9 rounded-xl font-bold text-xs text-foreground">← Elegir otro cliente</button>
+                </div>
+              ) : fiadoCreating ? (
+                /* Alta inline de cliente (sin límite de crédito) */
+                <div className="space-y-2">
+                  <input value={fiadoNewNombre} onChange={(e) => setFiadoNewNombre(e.target.value)} placeholder="Nombre *" autoFocus className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring" />
+                  <input value={fiadoNewTelefono} onChange={(e) => setFiadoNewTelefono(e.target.value)} placeholder="Teléfono (opcional)" className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring" />
+                  <input value={fiadoNewNotas} onChange={(e) => setFiadoNewNotas(e.target.value)} placeholder="Notas (opcional)" className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring" />
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => setFiadoCreating(false)} className="skeu-btn-ghost flex-1 h-10 rounded-xl font-bold text-sm text-foreground">Cancelar</button>
+                    <button onClick={handleCrearClienteFiado} disabled={!fiadoNewNombre.trim() || fiadoSavingCliente} className="skeu-btn-primary flex-1 h-10 rounded-xl font-bold text-sm disabled:opacity-50">{fiadoSavingCliente ? 'Guardando…' : 'Guardar'}</button>
+                  </div>
+                </div>
+              ) : (
+                /* Buscar / seleccionar cliente existente */
+                <>
+                  <input
+                    value={fiadoSearch}
+                    onChange={(e) => setFiadoSearch(e.target.value)}
+                    placeholder="Buscar por nombre o teléfono…"
+                    className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring mb-2"
+                  />
+                  <div className="max-h-60 overflow-y-auto">
+                    {(() => {
+                      const q = fiadoSearch.toLowerCase().trim();
+                      const filtrados = fiadoClientes.filter((c) => !q || c.nombre.toLowerCase().includes(q) || (c.telefono || '').toLowerCase().includes(q));
+                      if (filtrados.length === 0) {
+                        return <p className="text-sm text-muted-foreground py-3 text-center italic">Sin clientes que coincidan.</p>;
+                      }
+                      return (
+                        <ul className="divide-y divide-border">
+                          {filtrados.map((c) => (
+                            <li key={c.id}>
+                              <button onClick={() => setFiadoSelectedCliente(c)} className="w-full text-left py-2.5 px-2 flex items-center justify-between gap-2 hover:bg-muted/50 rounded-lg">
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold text-foreground truncate">{c.nombre}</span>
+                                  {c.telefono && <span className="block text-xs text-muted-foreground">{c.telefono}</span>}
+                                </span>
+                                <span className={`text-xs font-bold tabular-nums ${c.saldo_pendiente > 0 ? 'text-red-500' : 'text-green-500'}`}>{formatMoney(c.saldo_pendiente, sym)}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                  <button onClick={() => setFiadoCreating(true)} className="skeu-btn-ghost w-full h-10 rounded-xl font-bold text-sm text-foreground mt-2 flex items-center justify-center gap-1.5">
+                    <UserPlus className="h-4 w-4" /> Nuevo cliente de fiado
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
