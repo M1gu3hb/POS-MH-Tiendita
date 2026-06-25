@@ -12,6 +12,7 @@ import ThemeToggle from '@/components/layout/ThemeToggle';
 import MobileQuickNav from '@/components/layout/MobileQuickNav';
 import { useTheme } from '@/hooks/useTheme';
 import { useConfig } from '@/hooks/useConfig';
+import { useNegocio } from '@/hooks/useNegocio';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { Button } from '@/components/ui/button';
 
@@ -32,17 +33,17 @@ const navItems = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const { config } = useConfig();
+  const { negocio } = useNegocio();
   const { cajaAbierta } = useCajaAbierta();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const logo = config?.logo_url;
-  // El nombre del negocio vive en `negocios.nombre`, que `useConfig`
-  // (configuracion_negocio) no expone. Se usa el fallback 'POS MH' mientras se
-  // cablea un acceso por la capa de datos (src/lib/db/*); ver docs/BUGS_PENDING.md.
-  // No se consulta Supabase directamente desde el layout (regla de arquitectura).
-  const nombre = 'POS MH';
+  // El nombre del negocio vive en `negocios.nombre` (no en configuracion_negocio).
+  // useNegocio lo lee por la capa de datos (src/lib/db/configuracion.ts), sin
+  // consultar Supabase directamente desde el layout. Fallback 'POS MH' mientras carga.
+  const nombre = negocio?.nombre || 'POS MH';
 
   useEffect(() => {
     setMobileOpen(false);
