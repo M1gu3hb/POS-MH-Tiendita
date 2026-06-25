@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { useConfig } from '@/hooks/useConfig';
-import { getVentas } from '@/lib/db/ventas';
+import { getVentas, getTopProductos } from '@/lib/db/ventas';
 import { getGastos } from '@/lib/db/egresos';
 import { getCortes } from '@/lib/db/caja';
 import { getProductos } from '@/lib/db/productos';
@@ -67,6 +67,13 @@ export default function DashboardPage() {
     queryFn: () => getProductos(negocioId, { soloActivos: true }),
     enabled: !!negocioId,
     placeholderData: (prev) => prev,
+  });
+
+  const { data: topProductos, isLoading: topProductosLoading } = useQuery({
+    queryKey: ['top-productos', negocioId],
+    queryFn: () => getTopProductos(negocioId, 5),
+    enabled: !!negocioId,
+    staleTime: 1000 * 60 * 2,
   });
 
   const isLoading = ventasLoading || gastosLoading || prodLoading || cajaLoading;
@@ -150,6 +157,37 @@ export default function DashboardPage() {
         <StatCard accent="blue" title="Tarjeta" value={formatMoney(totalTarjeta, sym)} icon={CreditCard} isLoading={isLoading} />
         <StatCard accent="cyan" title="Transferencia" value={formatMoney(totalTransferencia, sym)} icon={ArrowRightLeft} isLoading={isLoading} />
         <StatCard accent="red" title="Gastos operativos" value={formatMoney(totalGastos, sym)} icon={TrendingDown} isLoading={isLoading} />
+      </div>
+
+      {/* Más vendidos esta semana */}
+      <div className="skeu-panel p-5">
+        <h3 className="font-semibold text-sm text-foreground mb-4">Más vendidos esta semana</h3>
+        {topProductosLoading ? (
+          <div className="flex items-center justify-center py-6 text-sm text-muted-foreground">
+            <span className="inline-block h-4 w-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin mr-2" />
+            Cargando más vendidos...
+          </div>
+        ) : topProductos && topProductos.length > 0 ? (
+          <div className="divide-y divide-border">
+            {topProductos.map((item, idx) => (
+              <div key={item.producto_id || idx} className="py-2.5 flex justify-between items-center text-sm first:pt-0 last:pb-0">
+                <span className="font-medium text-foreground truncate">{item.producto_nombre}</span>
+                <div className="flex gap-6 text-xs text-right ml-4">
+                  <div>
+                    <p className="text-muted-foreground">Vendidos</p>
+                    <p className="font-bold tabular-nums text-foreground">{item.total_vendido}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Ingresos</p>
+                    <p className="font-bold tabular-nums text-foreground">{formatMoney(item.total_ingresos, sym)}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm py-4 text-center">Sin ventas esta semana</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">

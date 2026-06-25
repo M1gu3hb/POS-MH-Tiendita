@@ -107,3 +107,45 @@ export async function createVenta(input: NuevaVentaInput): Promise<Venta> {
 
   return venta;
 }
+
+export async function getTopProductos(
+  negocioId: string,
+  limite = 5,
+): Promise<Array<{ producto_id: string; producto_nombre: string; total_vendido: number; total_ingresos: number }>> {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now.setDate(diff));
+  monday.setHours(0, 0, 0, 0);
+  const isoString = monday.toISOString();
+
+  const { data, error } = await supabase
+    .from('detalle_ventas')
+    .select('producto_id, producto_nombre, cantidad, total')
+    .eq('negocio_id', negocioId)
+    .gte('created_at', isoString);
+
+  if (error) throw error;
+
+  const map: Record<string, { producto_id: string; producto_nombre: string; total_vendido: number; total_ingresos: number }> = {};
+
+  (data || []).forEach((item) => {
+    const id = item.producto_id || 'unassigned';
+    const nombre = item.producto_nombre || 'Producto sin nombre';
+    if (!map[id]) {
+      map[id] = {
+        producto_id: id,
+        producto_nombre: nombre,
+        total_vendido: 0,
+        total_ingresos: 0,
+      };
+    }
+    map[id].total_vendido += Number(item.cantidad || 0);
+    map[id].total_ingresos += Number(item.total || 0);
+  });
+
+  return Object.values(map)
+    .sort((a, b) => b.total_vendido - a.total_vendido)
+    .slice(0, limite);
+}
+

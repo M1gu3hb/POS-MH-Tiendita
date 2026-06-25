@@ -99,12 +99,14 @@ export function useCarritoActivo(corteId: string | null) {
   );
 
   const addItem = useCallback(
-    (producto: Producto) => withCarrito((id) => carritoRepo.addProducto(id, negocioId as string, producto)),
+    (producto: Producto, precioUnitario?: number, esMayoreo?: boolean) =>
+      withCarrito((id) => carritoRepo.addProducto(id, negocioId as string, producto, precioUnitario, esMayoreo)),
     [withCarrito, negocioId],
   );
 
   const updateQty = useCallback(
-    (itemId: string, cantidad: number) => withCarrito((id) => carritoRepo.setItemCantidad(id, itemId, cantidad)),
+    (itemId: string, cantidad: number, precioUnitario?: number, esMayoreo?: boolean) =>
+      withCarrito((id) => carritoRepo.setItemCantidad(id, itemId, cantidad, precioUnitario, esMayoreo)),
     [withCarrito],
   );
 

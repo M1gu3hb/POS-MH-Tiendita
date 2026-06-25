@@ -11,7 +11,7 @@ import { getCategorias } from '@/lib/db/categorias';
 import { getProveedores } from '@/lib/db/proveedores';
 import { createVenta } from '@/lib/db/ventas';
 import { ajustarStock } from '@/lib/db/inventario';
-import { getScanEventsPendientes, marcarScanEvent } from '@/lib/db/scan';
+import { getScanEventsPendientes, marcarScanEvent, subscribeScanEvents } from '@/lib/db/scan';
 import { resolveProductByBarcode } from '@/lib/productLookup';
 import { formatMoney } from '@/utils/currency';
 import { generateFolio } from '@/utils/folioUtils';
@@ -49,7 +49,7 @@ export default function VentaPage() {
   const { items, addItem, updateQty: updateQtyShared, removeItem: removeItemShared, clear: clearCartShared, cerrarVenta: cerrarVentaCarrito } = useCarritoActivo(cajaAbierta?.id || null);
 
   // Vista para los componentes de UI (esperan nombre/precio/costo).
-  const carrito = items.map((i) => ({ ...i, nombre: i.producto_nombre, precio: i.precio_unitario, costo: i.costo_unitario }));
+  const carrito = items.map((i) => ({ ...i, nombre: i.producto_nombre, precio: i.precio_unitario, costo: i.costo_unitario, es_mayoreo: i.es_mayoreo }));
 
   const [cobroOpen, setCobroOpen] = useState(false);
   const [cajaDialogOpen, setCajaDialogOpen] = useState(false);
@@ -81,17 +81,30 @@ export default function VentaPage() {
       toast.error('Producto sin stock');
       return;
     }
-    void addItem(producto);
+    const existente = items.find((i) => i.producto_id === producto.id);
+    const nuevaCant = (existente?.cantidad || 0) + 1;
+    const esMayoreo = !!(config?.activar_mayoreo && producto.cantidad_minima_mayoreo > 0 && nuevaCant >= producto.cantidad_minima_mayoreo);
+    const precioUnitario = esMayoreo ? producto.precio_mayoreo : producto.precio_venta;
+
+    void addItem(producto, precioUnitario, esMayoreo);
     playScanSuccess();
     if (opts.showFeedback) {
-      const existente = items.find((i) => i.producto_id === producto.id);
-      setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: (existente?.cantidad || 0) + 1, precio: producto.precio_venta, modo: 'local' });
+      setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: nuevaCant, precio: precioUnitario, modo: 'local' });
     }
   }, [config, addItem, gated, items]);
 
   const updateQty = (idx, qty) => {
     const item = items[idx];
-    if (item) updateQtyShared(item.id, qty);
+    if (item) {
+      const prod = productos.find((p) => p.id === item.producto_id);
+      if (prod) {
+        const esMayoreo = !!(config?.activar_mayoreo && prod.cantidad_minima_mayoreo > 0 && qty >= prod.cantidad_minima_mayoreo);
+        const precioUnitario = esMayoreo ? prod.precio_mayoreo : prod.precio_venta;
+        updateQtyShared(item.id, qty, precioUnitario, esMayoreo);
+      } else {
+        updateQtyShared(item.id, qty);
+      }
+    }
   };
   const removeItem = (idx) => {
     const item = items[idx];
@@ -207,6 +220,8 @@ export default function VentaPage() {
         detalle,
       });
 
+      const stockBajo = [];
+
       // Descontar stock + kardex por cada renglón.
       for (const item of carrito) {
         const prod = productos.find((p) => p.id === item.producto_id);
@@ -225,6 +240,13 @@ export default function VentaPage() {
           referenciaTipo: 'venta',
           referenciaId: venta.id,
         });
+        if (newStock <= (prod.stock_minimo || 0)) {
+          stockBajo.push({
+            nombre: prod.nombre,
+            stock_actual: newStock,
+            unidad: prod.unidad_venta || 'pieza',
+          });
+        }
       }
 
       // Sync a Vista Cliente (mismo dispositivo).
@@ -254,6 +276,9 @@ export default function VentaPage() {
       setShowTicket(true);
       playSaleSuccess();
       toast.success(`Venta ${folio} cobrada exitosamente`);
+      stockBajo.forEach((p) => {
+        toast.warning(`⚠️ Stock bajo: ${p.nombre} — quedan ${p.stock_actual} ${p.unidad}`);
+      });
 
       ['ventas-caja', 'gastos-caja', 'productos-pos', 'productos-dashboard', 'caja-cortes', 'dashboard-cortes', 'registros-ventas'].forEach((k) =>
         queryClient.invalidateQueries({ queryKey: [k] }),
@@ -302,42 +327,68 @@ export default function VentaPage() {
 
   const needsCaja = config?.abrir_caja_obligatorio && !cajaAbierta && !cajaLoading;
 
-  // Consumir ScanEvent pendientes del escáner móvil (claim atómico + add).
+  // Consumir ScanEvent del escáner móvil vía Supabase Realtime PURO (reemplaza el
+  // polling de 1.5s). Cross-device: el teléfono inserta scan_events y este POS los
+  // recibe por suscripción (canal scan_events, filtro corte_id=eq.[corteId], INSERT).
+  // Cada scan 'pendiente' se reclama (→ 'procesado'), se resuelve el producto y se
+  // agrega al carrito (con precio de mayoreo si aplica). El mismo dispositivo escanea
+  // por handleBarcodeScan/addToCart (no por scan_events); la Vista Cliente sigue por
+  // BroadcastChannel (efecto de arriba), preservado como fallback de mismo dispositivo.
   useEffect(() => {
-    if (!cajaAbierta?.id) return;
+    const corteId = cajaAbierta?.id;
+    if (!corteId) return;
     let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      if (typeof document !== 'undefined' && document.hidden) return;
-      try {
-        const eventos = await getScanEventsPendientes(cajaAbierta.id);
-        if (cancelled || eventos.length === 0) return;
-        for (const ev of eventos) {
-          if (cancelled) break;
-          if (processedEventIdsRef.current.has(ev.id)) continue;
-          processedEventIdsRef.current.add(ev.id);
-          try { await marcarScanEvent(ev.id, 'procesado'); } catch { continue; }
 
-          let producto = null;
-          if (ev.producto_id) producto = productos.find((p) => p.id === ev.producto_id) || null;
-          if (!producto && ev.codigo_barras) {
-            const r = resolveProductByBarcode(ev.codigo_barras, productos);
-            if (r.status === 'found') producto = r.producto;
-          }
-          if (!producto) {
-            try { await marcarScanEvent(ev.id, 'error', 'Producto no encontrado'); } catch { /* noop */ }
-            continue;
-          }
-          const cantidad = ev.cantidad && ev.cantidad > 0 ? ev.cantidad : 1;
-          for (let i = 0; i < cantidad; i += 1) void addItem(producto);
-          playScanSuccess();
-          toast.success(`Recibido desde escáner: ${producto.nombre}`);
-        }
-      } catch { /* polling silencioso */ }
+    const procesarEvento = async (ev) => {
+      if (cancelled || !ev) return;
+      if (ev.estado && ev.estado !== 'pendiente') return;
+      if (processedEventIdsRef.current.has(ev.id)) return;
+      processedEventIdsRef.current.add(ev.id);
+      try { await marcarScanEvent(ev.id, 'procesado'); } catch { return; }
+
+      let producto = null;
+      if (ev.producto_id) producto = productos.find((p) => p.id === ev.producto_id) || null;
+      if (!producto && ev.codigo_barras) {
+        const r = resolveProductByBarcode(ev.codigo_barras, productos);
+        if (r.status === 'found') producto = r.producto;
+      }
+      if (!producto) {
+        try { await marcarScanEvent(ev.id, 'error', 'Producto no encontrado'); } catch { /* noop */ }
+        return;
+      }
+      const cantidad = ev.cantidad && ev.cantidad > 0 ? ev.cantidad : 1;
+      let actualCant = items.find((i) => i.producto_id === producto.id)?.cantidad || 0;
+      for (let i = 0; i < cantidad; i += 1) {
+        actualCant += 1;
+        const esMayoreo = !!(config?.activar_mayoreo && producto.cantidad_minima_mayoreo > 0 && actualCant >= producto.cantidad_minima_mayoreo);
+        const precioUnitario = esMayoreo ? producto.precio_mayoreo : producto.precio_venta;
+        void addItem(producto, precioUnitario, esMayoreo);
+      }
+      playScanSuccess();
+      toast.success(`Recibido desde escáner: ${producto.nombre}`);
     };
-    const id = setInterval(tick, 1500);
-    void tick();
-    return () => { cancelled = true; clearInterval(id); };
+
+    // Catch-up inicial (una sola vez, NO es polling): drena pendientes que pudieran
+    // haberse insertado antes de que la suscripción Realtime estuviera conectada.
+    void (async () => {
+      try {
+        const pendientes = await getScanEventsPendientes(corteId);
+        for (const ev of pendientes) {
+          if (cancelled) break;
+          await procesarEvento(ev);
+        }
+      } catch { /* noop */ }
+    })();
+
+    // Suscripción Realtime pura sobre scan_events del corte (evento INSERT).
+    const unsubscribe = subscribeScanEvents(corteId, (ev) => {
+      void procesarEvento(ev);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cajaAbierta?.id, productos, addItem]);
 

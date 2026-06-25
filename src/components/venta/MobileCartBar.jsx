@@ -120,7 +120,14 @@ export default function MobileCartBar({
                       </button>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-muted-foreground tabular-nums">{formatMoney(item.precio, sym)} × {item.cantidad}</p>
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        {item.es_mayoreo && (
+                          <span className="text-[9px] font-bold tracking-wider bg-green-500/10 text-green-500 dark:text-green-400 px-1.5 py-0.5 rounded border border-green-500/20 animate-pulse">
+                            MAYOREO
+                          </span>
+                        )}
+                        <p className="text-xs text-muted-foreground tabular-nums">{formatMoney(item.precio, sym)} × {item.cantidad}</p>
+                      </div>
                       <p className="text-lg font-bold text-foreground tabular-nums">{formatMoney(item.subtotal, sym)}</p>
                     </div>
                   </div>

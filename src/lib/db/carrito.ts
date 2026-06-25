@@ -94,15 +94,25 @@ export async function addProducto(
   carritoId: string,
   negocioId: string,
   producto: Producto,
+  precioUnitario?: number,
+  esMayoreo?: boolean,
 ): Promise<void> {
   const items = await getItems(carritoId);
   const existente = items.find((i) => i.producto_id === producto.id);
+
+  const precio = precioUnitario !== undefined ? precioUnitario : producto.precio_venta;
+  const mayoreo = esMayoreo !== undefined ? esMayoreo : false;
 
   if (existente) {
     const cantidad = existente.cantidad + 1;
     const { error } = await supabase
       .from('carrito_items')
-      .update({ cantidad, subtotal: cantidad * existente.precio_unitario })
+      .update({ 
+        cantidad, 
+        precio_unitario: precio, 
+        subtotal: cantidad * precio,
+        es_mayoreo: mayoreo 
+      })
       .eq('id', existente.id);
     if (error) throw error;
   } else {
@@ -114,11 +124,11 @@ export async function addProducto(
       sku: producto.sku,
       codigo_barras: producto.codigo_barras,
       cantidad: 1,
-      precio_unitario: producto.precio_venta,
+      precio_unitario: precio,
       costo_unitario: producto.costo_unitario,
       descuento: 0,
-      subtotal: producto.precio_venta,
-      es_mayoreo: false,
+      subtotal: precio,
+      es_mayoreo: mayoreo,
     });
     if (error) throw error;
   }
@@ -130,23 +140,41 @@ export async function setItemCantidad(
   carritoId: string,
   itemId: string,
   cantidad: number,
+  precioUnitario?: number,
+  esMayoreo?: boolean,
 ): Promise<void> {
   if (cantidad <= 0) {
     await removeItem(carritoId, itemId);
     return;
   }
-  const { data: item } = await supabase
-    .from('carrito_items')
-    .select('precio_unitario')
-    .eq('id', itemId)
-    .maybeSingle()
-    .returns<{ precio_unitario: number } | null>();
 
-  if (!item) return;
+  let precio: number;
+  let mayoreo: boolean;
+
+  if (precioUnitario === undefined || esMayoreo === undefined) {
+    const { data: item } = await supabase
+      .from('carrito_items')
+      .select('precio_unitario, es_mayoreo')
+      .eq('id', itemId)
+      .maybeSingle()
+      .returns<{ precio_unitario: number; es_mayoreo: boolean } | null>();
+    
+    if (!item) return;
+    precio = precioUnitario !== undefined ? precioUnitario : item.precio_unitario;
+    mayoreo = esMayoreo !== undefined ? esMayoreo : item.es_mayoreo;
+  } else {
+    precio = precioUnitario;
+    mayoreo = esMayoreo;
+  }
 
   const { error } = await supabase
     .from('carrito_items')
-    .update({ cantidad, subtotal: cantidad * item.precio_unitario })
+    .update({ 
+      cantidad, 
+      precio_unitario: precio, 
+      subtotal: cantidad * precio,
+      es_mayoreo: mayoreo 
+    })
     .eq('id', itemId);
   if (error) throw error;
 
