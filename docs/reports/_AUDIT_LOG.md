@@ -1,6 +1,6 @@
 # AUDIT_LOG — Registro de reportes auditados
 
-Control interno del auditor técnico. **Último reporte auditado: #029.**
+Control interno del auditor técnico. **Último reporte auditado: #034.**
 Nunca se re-audita un reporte ya listado aquí.
 ⚠️ **Colisión de número:** existen DOS reportes #020 (claude-code `fix-migration-011` y codex
 `deploy-prep`). Las auditorías finales 022/023/024 son una por IA. Todos auditados.
@@ -37,5 +37,9 @@ Nunca se re-audita un reporte ya listado aquí.
 | 027 | 2026-06-25 | antigravity | mobile-ux | ✅ Conforme | PASO 0: auditó #024, sin bugs. Navbar inferior móvil `MobileQuickNav` con **exactamente 4 botones** (Dashboard/Venta/Escáner/Menú), `md:hidden`; `layout.tsx` `pb-16 md:pb-0`; `globals.css` padding móvil. **Desktop sin afectar (verificado).** Auditó escáner móvil (sin cambios). Sin Supabase directo. |
 | 028 | 2026-06-25 | claude-code | nombre-negocio-corte-iniciales | ✅ Conforme | PASO 0: auditó #022, sin bugs. CortePDF/ResumenFinancieroPDF muestran `negocio?.nombre` (no "Negocio") vía `useNegocio`; avatar del sidebar con iniciales del nombre. Sin Supabase directo. Sin migración. **Editó `layout.tsx` (también 029).** |
 | 029 | 2026-06-25 | antigravity | onboarding | ✅ Conforme | PASO 0: auditó #027, sin bugs. Migración `013_onboarding` **aplicada** (verificado en ledger). `useOnboarding` (gate `onboarding_completado === false`, guarda true + invalida), `OnboardingTutorial` de **4 pasos** correctos. Sin Supabase directo. **Editó `layout.tsx` en paralelo con 028; merge OK (verificado).** Caveat: el tutorial saldrá también a negocios preexistentes. |
+| 030 | 2026-06-26 | claude-code | vista-cliente | ✅ Conforme | PASO 0: auditó #028, sin bugs. `vista-cliente/page.jsx`: logo/iniciales + **nombre real** (useNegocio); productos en letra grande (clamp ≥24px), total enorme. Sin Supabase directo. No tocó `venta/page.jsx`. Solo build. |
+| 031 | 2026-06-26 | antigravity | categorias-pos | ✅ Conforme | PASO 0: auditó #029, sin bugs. `CategoriaTabs.jsx` + filtro `productosFiltrados` en grid y buscador. **Único que tocó `venta/page.jsx` en el lote; verificado que NO rompió fiado/whatsapp/carrito.** Sin Supabase directo. Sin migración. |
+| 032 | 2026-06-26 | codex | hardware-escaner-bascula | ⚠️ Conforme; migración sin aplicar | PASO 0: auditó #026, sin bugs. Escáner físico (keydown <50ms + Enter) + báscula (Web Serial, `verificarSoporte`, 9600) + hooks + pestaña Hardware con toggles (`updateConfiguracion`). Sin Supabase directo. **🔴 `015_hardware_config` NO aplicada → toggles fallarán en runtime (42703); repo≠BD.** |
+| 034 | 2026-06-26 | antigravity | combos | ✅ Conforme | PASO 0: auditó #031, sin bugs. Capa de datos `combos.ts` + `ComboDialog` (sumas dinámicas y sugerencia 15% desc.) + `CombosManager` (switch activo, vigencia). Sin Supabase directo. Migración `017_combos` creada (PENDIENTE DE APLICAR). Solo build. |
 
 <!-- Última actualización: 2026-06-24 -->
