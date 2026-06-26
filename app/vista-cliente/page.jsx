@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { formatMoney } from '@/utils/currency';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useConfig } from '@/hooks/useConfig';
+import { useNegocio } from '@/hooks/useNegocio';
 
 /**
  * Vista Cliente — pantalla de display (segundo monitor). Pública: puede abrirse
@@ -19,6 +20,7 @@ export default function VistaClientePage() {
   const [lastSale, setLastSale] = useState(null);
   const { authUser } = useAuth();
   const { config: dbConfig } = useConfig();
+  const { negocio } = useNegocio();
 
   const { KEY_CART, KEY_LAST_SALE } = useMemo(() => {
     const scope = authUser?.email ? `::${authUser.email}` : '';
@@ -76,9 +78,20 @@ export default function VistaClientePage() {
 
   const config = dbConfig || cart.config || lastSale?.config;
   const sym = config?.simbolo_moneda || '$';
-  const nombre = config?.nombre_negocio || 'POS MH Tiendita';
+  // El nombre real del negocio vive en `negocios.nombre` (vía useNegocio), NO en
+  // configuracion_negocio. Fallbacks por si la vista se abre sin sesión.
+  const nombre = negocio?.nombre || config?.nombre_negocio || 'POS MH Tiendita';
   const logo = config?.logo_url;
   const mensaje = config?.mensaje_ticket || '¡Gracias por su compra!';
+  // Iniciales del avatar: primeras letras de cada palabra (máx 2, mayúsculas) —
+  // mismas que el sidebar. Fallback "MH" si aún no carga el nombre.
+  const iniciales = (() => {
+    const n = (negocio?.nombre || '').trim();
+    if (!n) return 'MH';
+    const palabras = n.split(/\s+/).filter(Boolean);
+    if (palabras.length >= 2) return (palabras[0][0] + palabras[1][0]).toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  })();
 
   const showingSale = lastSale && cart.items.length === 0;
   const hasItems = cart.items.length > 0;
@@ -88,11 +101,11 @@ export default function VistaClientePage() {
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '14px 24px', background: 'linear-gradient(to bottom, hsl(220 25% 13%), hsl(220 25% 10%))', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
         {logo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logo} alt={nombre} style={{ height: 48, width: 48, borderRadius: 12, objectFit: 'contain', border: '2px solid rgba(255,255,255,0.15)' }} />
+          <img src={logo} alt={nombre} style={{ height: 56, width: 56, borderRadius: 14, objectFit: 'contain', border: '2px solid rgba(255,255,255,0.15)' }} />
         ) : (
-          <div style={{ height: 48, width: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 900, color: 'white', background: 'linear-gradient(135deg, hsl(214 80% 58%), hsl(214 80% 42%))' }}>{nombre.charAt(0)}</div>
+          <div style={{ height: 56, width: 56, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 900, color: 'white', background: 'linear-gradient(135deg, hsl(214 80% 58%), hsl(214 80% 42%))' }}>{iniciales}</div>
         )}
-        <h1 style={{ fontSize: 28, fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>{nombre}</h1>
+        <h1 style={{ fontSize: 'clamp(1.75rem, 2.6vw, 2.5rem)', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>{nombre}</h1>
       </div>
 
       {logo && (
@@ -126,10 +139,10 @@ export default function VistaClientePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', flexShrink: 0 }}>
                 <thead>
                   <tr style={{ background: 'hsl(220 25% 13%)' }}>
-                    <th style={{ textAlign: 'left', padding: '10px 20px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.7)' }}>Producto</th>
-                    <th style={{ textAlign: 'center', padding: '10px 12px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.7)', width: 60 }}>Cant.</th>
-                    <th style={{ textAlign: 'right', padding: '10px 12px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.7)', width: 90 }}>Precio</th>
-                    <th style={{ textAlign: 'right', padding: '10px 20px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.7)', width: 110 }}>Subtotal</th>
+                    <th style={{ textAlign: 'left', padding: '14px 24px', fontSize: 15, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.75)' }}>Producto</th>
+                    <th style={{ textAlign: 'center', padding: '14px 12px', fontSize: 15, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.75)', width: 110 }}>Cant.</th>
+                    <th style={{ textAlign: 'right', padding: '14px 16px', fontSize: 15, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.75)', width: 180 }}>Precio</th>
+                    <th style={{ textAlign: 'right', padding: '14px 24px', fontSize: 15, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, color: 'rgba(255,255,255,0.75)', width: 220 }}>Subtotal</th>
                   </tr>
                 </thead>
               </table>
@@ -137,11 +150,11 @@ export default function VistaClientePage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <tbody>
                     {cart.items.map((item, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-                        <td style={{ padding: '12px 20px', fontSize: 16, fontWeight: 600, color: '#1e293b' }}>{item.nombre}</td>
-                        <td style={{ padding: '12px 12px', textAlign: 'center', fontSize: 22, fontWeight: 900, color: '#334155', width: 60 }}>{item.cantidad}</td>
-                        <td style={{ padding: '12px 12px', textAlign: 'right', fontSize: 13, color: '#64748b', width: 90, fontVariantNumeric: 'tabular-nums' }}>{formatMoney(item.precio, sym)}</td>
-                        <td style={{ padding: '12px 20px', textAlign: 'right', fontSize: 18, fontWeight: 700, color: '#0f172a', width: 110, fontVariantNumeric: 'tabular-nums' }}>{formatMoney(item.subtotal, sym)}</td>
+                      <tr key={i} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                        <td style={{ padding: '18px 24px', fontSize: 'clamp(1.5rem, 2.2vw, 2.1rem)', fontWeight: 700, color: '#1e293b' }}>{item.nombre}</td>
+                        <td style={{ padding: '18px 12px', textAlign: 'center', fontSize: 'clamp(1.5rem, 2.2vw, 2.1rem)', fontWeight: 900, color: '#334155', width: 110 }}>{item.cantidad}</td>
+                        <td style={{ padding: '18px 16px', textAlign: 'right', fontSize: 'clamp(1.1rem, 1.7vw, 1.6rem)', color: '#475569', width: 180, fontVariantNumeric: 'tabular-nums' }}>{formatMoney(item.precio, sym)}</td>
+                        <td style={{ padding: '18px 24px', textAlign: 'right', fontSize: 'clamp(1.5rem, 2.2vw, 2.1rem)', fontWeight: 800, color: '#0f172a', width: 220, fontVariantNumeric: 'tabular-nums' }}>{formatMoney(item.subtotal, sym)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -149,26 +162,26 @@ export default function VistaClientePage() {
               </div>
             </div>
 
-            <div style={{ flexShrink: 0, borderRadius: 16, background: 'white', boxShadow: '0 8px 32px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.08)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ flexShrink: 0, borderRadius: 16, background: 'white', boxShadow: '0 8px 32px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.08)', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                {cart.descuento > 0 && <p style={{ fontSize: 13, color: '#ef4444', fontWeight: 600, marginBottom: 2 }}>Descuento: −{formatMoney(cart.descuento, sym)}</p>}
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>Total</p>
+                {cart.descuento > 0 && <p style={{ fontSize: 18, color: '#ef4444', fontWeight: 700, marginBottom: 4 }}>Descuento: −{formatMoney(cart.descuento, sym)}</p>}
+                <p style={{ fontSize: 'clamp(1.25rem, 1.8vw, 1.75rem)', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 3 }}>Total</p>
               </div>
-              <p style={{ fontSize: 56, fontWeight: 900, color: '#0f172a', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{formatMoney(cart.total, sym)}</p>
+              <p style={{ fontSize: 'clamp(3.5rem, 8vw, 7rem)', fontWeight: 900, color: '#0f172a', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>{formatMoney(cart.total, sym)}</p>
             </div>
           </div>
         )}
 
         {!hasItems && !showingSale && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}>
             {logo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt={nombre} style={{ height: 120, width: 120, borderRadius: 24, objectFit: 'contain', opacity: 0.25 }} />
+              <img src={logo} alt={nombre} style={{ height: 160, width: 160, borderRadius: 28, objectFit: 'contain', opacity: 0.35 }} />
             ) : (
-              <div style={{ height: 120, width: 120, borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 48, fontWeight: 900, color: '#cbd5e1', background: 'rgba(0,0,0,0.04)' }}>{nombre.charAt(0)}</div>
+              <div style={{ height: 160, width: 160, borderRadius: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 64, fontWeight: 900, color: '#cbd5e1', background: 'rgba(0,0,0,0.04)' }}>{iniciales}</div>
             )}
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#94a3b8' }}>{nombre}</p>
-            <p style={{ fontSize: 18, color: '#94a3b8' }}>Esperando venta...</p>
+            <p style={{ fontSize: 'clamp(2rem, 3vw, 2.75rem)', fontWeight: 800, color: '#475569' }}>{nombre}</p>
+            <p style={{ fontSize: 'clamp(1.5rem, 2.4vw, 2rem)', color: '#94a3b8' }}>Esperando venta…</p>
           </div>
         )}
       </div>
