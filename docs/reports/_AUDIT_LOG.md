@@ -1,6 +1,6 @@
 # AUDIT_LOG — Registro de reportes auditados
 
-Control interno del auditor técnico. **Último reporte auditado: #027.**
+Control interno del auditor técnico. **Último reporte auditado: #029.**
 Nunca se re-audita un reporte ya listado aquí.
 ⚠️ **Colisión de número:** existen DOS reportes #020 (claude-code `fix-migration-011` y codex
 `deploy-prep`). Las auditorías finales 022/023/024 son una por IA. Todos auditados.
@@ -35,5 +35,7 @@ Nunca se re-audita un reporte ya listado aquí.
 | 025 | 2026-06-25 | claude-code | fiado-mejorado | ✅ Conforme | PASO 0: auditó #022, fiado ya descontaba stock. Modal de fiado en POS: crear cliente **inline sin navegar** (sin límite); confirma → venta `fiado` que **descuenta stock** (`ajustarStock`) + cargo. `/fiado`: sin límite + "Liquidar todo". Sin Supabase directo. Migración 012 innecesaria. **Editó `venta/page.jsx` (también 026).** |
 | 026 | 2026-06-25 | codex | whatsapp-telefono | ✅ Conforme | PASO 0: auditó #023, sin bugs. `construirUrlWhatsApp(mensaje, telefono?)`; input `tel` opcional, solo números, máx 10, `wa.me/52…`; **no se persiste** (estado local). Sin Supabase directo. **Editó `venta/page.jsx` en paralelo con 025; merge OK (ambos cambios coexisten, verificado).** |
 | 027 | 2026-06-25 | antigravity | mobile-ux | ✅ Conforme | PASO 0: auditó #024, sin bugs. Navbar inferior móvil `MobileQuickNav` con **exactamente 4 botones** (Dashboard/Venta/Escáner/Menú), `md:hidden`; `layout.tsx` `pb-16 md:pb-0`; `globals.css` padding móvil. **Desktop sin afectar (verificado).** Auditó escáner móvil (sin cambios). Sin Supabase directo. |
+| 028 | 2026-06-25 | claude-code | nombre-negocio-corte-iniciales | ✅ Conforme | PASO 0: auditó #022, sin bugs. CortePDF/ResumenFinancieroPDF muestran `negocio?.nombre` (no "Negocio") vía `useNegocio`; avatar del sidebar con iniciales del nombre. Sin Supabase directo. Sin migración. **Editó `layout.tsx` (también 029).** |
+| 029 | 2026-06-25 | antigravity | onboarding | ✅ Conforme | PASO 0: auditó #027, sin bugs. Migración `013_onboarding` **aplicada** (verificado en ledger). `useOnboarding` (gate `onboarding_completado === false`, guarda true + invalida), `OnboardingTutorial` de **4 pasos** correctos. Sin Supabase directo. **Editó `layout.tsx` en paralelo con 028; merge OK (verificado).** Caveat: el tutorial saldrá también a negocios preexistentes. |
 
 <!-- Última actualización: 2026-06-24 -->

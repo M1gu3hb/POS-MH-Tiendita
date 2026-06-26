@@ -26,6 +26,7 @@ import { normalizeBarcode } from '@/utils/barcodeUtils';
 import { construirUrlWhatsApp, generarMensajeTicket } from '@/utils/whatsapp';
 import { playScanSuccess, playScanError, playSaleSuccess } from '@/utils/audioFeedback';
 import BuscadorProducto from '@/components/venta/BuscadorProducto';
+import CategoriaTabs from '@/components/venta/CategoriaTabs';
 import CarritoVenta from '@/components/venta/CarritoVenta';
 import MobileCartBar from '@/components/venta/MobileCartBar';
 import CobroDialog from '@/components/venta/CobroDialog';
@@ -94,6 +95,7 @@ export default function VentaPage() {
   const [fiadoNewTelefono, setFiadoNewTelefono] = useState('');
   const [fiadoNewNotas, setFiadoNewNotas] = useState('');
   const [fiadoSavingCliente, setFiadoSavingCliente] = useState(false);
+  const [selectedCategoriaId, setSelectedCategoriaId] = useState(null);
   const processedEventIdsRef = useRef(new Set());
 
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias', negocioId], queryFn: () => getCategorias(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
@@ -106,6 +108,10 @@ export default function VentaPage() {
 
   // Productos a mostrar/buscar: offline usa el cache de IndexedDB.
   const productosUI = isOffline ? offlineProductos : productos;
+
+  const productosFiltrados = selectedCategoriaId
+    ? productosUI.filter((p) => p.categoria_id === selectedCategoriaId)
+    : productosUI;
 
   // Registrar el Service Worker. STEP 6 movido aquí porque app/layout.tsx NO está en
   // los archivos permitidos esta ronda; registrado desde /venta queda activo para todo el origen.
@@ -728,7 +734,7 @@ export default function VentaPage() {
       <div className="flex-1 flex flex-col p-3 lg:p-4 overflow-hidden gap-3">
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            <BuscadorProducto productos={productosUI} onSelect={addToCart} onNotFound={(code) => setNoEncontradoCode(code)} />
+            <BuscadorProducto productos={productosFiltrados} onSelect={addToCart} onNotFound={(code) => setNoEncontradoCode(code)} />
           </div>
           <button onClick={gated(() => setScannerOpen(true))} title="Escanear código de barras" className="skeu-btn-primary h-12 px-3 sm:px-4 rounded-xl flex items-center gap-1.5 font-bold text-sm flex-shrink-0">
             <Camera className="h-5 w-5" />
@@ -768,9 +774,15 @@ export default function VentaPage() {
         )}
 
         {!needsCaja && (
-          <div className="flex-1 overflow-y-auto">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">
-              {productosUI.map((p) => (
+          <>
+            <CategoriaTabs
+              categorias={categorias}
+              selectedCategoriaId={selectedCategoriaId}
+              onSelectCategoria={setSelectedCategoriaId}
+            />
+            <div className="flex-1 overflow-y-auto">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">
+                {productosFiltrados.map((p) => (
                 <button key={p.id} onClick={() => addToCart(p)} className="skeu-card flex flex-col p-3 text-left transition-all duration-150 hover:translate-y-[-1px] active:translate-y-[1px] active:shadow-sm" style={{ minHeight: '100px' }}>
                   {p.imagen_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -787,7 +799,8 @@ export default function VentaPage() {
               ))}
             </div>
           </div>
-        )}
+        </>
+      )}
       </div>
 
       <div className="hidden lg:flex w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-border flex-col" style={{ background: 'hsl(var(--card))', boxShadow: '-4px 0 16px rgba(0,0,0,0.06)' }}>
