@@ -12,6 +12,7 @@ import { getCortes } from '@/lib/db/caja';
 import { getProductos, getProductosStockBajo } from '@/lib/db/productos';
 import { formatMoney, formatPercent } from '@/utils/currency';
 import StatCard from '@/components/dashboard/StatCard';
+import InteligenciaNegocio from '@/components/dashboard/InteligenciaNegocio';
 import LoadingState from '@/components/common/LoadingState';
 import {
   DollarSign, TrendingUp, TrendingDown, Wallet, CreditCard,
@@ -251,6 +252,9 @@ export default function DashboardPage() {
         <StatCard accent="cyan" title="Transferencia" value={formatMoney(totalTransferencia, sym)} icon={ArrowRightLeft} isLoading={isLoading} />
         <StatCard accent="red" title="Gastos operativos" value={formatMoney(totalGastos, sym)} icon={TrendingDown} isLoading={isLoading} />
       </div>
+
+      {/* Inteligencia del negocio — solo para el dueño, igual que el resumen del día */}
+      {usuario?.rol === 'dueno' && <InteligenciaNegocio negocioId={negocioId} sym={sym} />}
 
       {/* Más vendidos esta semana */}
       <div className="skeu-panel p-5">
