@@ -1,6 +1,6 @@
 # AUDIT_LOG — Registro de reportes auditados
 
-Control interno del auditor técnico. **Último reporte auditado: #034.**
+Control interno del auditor técnico. **Último reporte auditado: #037.**
 Nunca se re-audita un reporte ya listado aquí.
 ⚠️ **Colisión de número:** existen DOS reportes #020 (claude-code `fix-migration-011` y codex
 `deploy-prep`). Las auditorías finales 022/023/024 son una por IA. Todos auditados.
@@ -39,7 +39,11 @@ Nunca se re-audita un reporte ya listado aquí.
 | 029 | 2026-06-25 | antigravity | onboarding | ✅ Conforme | PASO 0: auditó #027, sin bugs. Migración `013_onboarding` **aplicada** (verificado en ledger). `useOnboarding` (gate `onboarding_completado === false`, guarda true + invalida), `OnboardingTutorial` de **4 pasos** correctos. Sin Supabase directo. **Editó `layout.tsx` en paralelo con 028; merge OK (verificado).** Caveat: el tutorial saldrá también a negocios preexistentes. |
 | 030 | 2026-06-26 | claude-code | vista-cliente | ✅ Conforme | PASO 0: auditó #028, sin bugs. `vista-cliente/page.jsx`: logo/iniciales + **nombre real** (useNegocio); productos en letra grande (clamp ≥24px), total enorme. Sin Supabase directo. No tocó `venta/page.jsx`. Solo build. |
 | 031 | 2026-06-26 | antigravity | categorias-pos | ✅ Conforme | PASO 0: auditó #029, sin bugs. `CategoriaTabs.jsx` + filtro `productosFiltrados` en grid y buscador. **Único que tocó `venta/page.jsx` en el lote; verificado que NO rompió fiado/whatsapp/carrito.** Sin Supabase directo. Sin migración. |
-| 032 | 2026-06-26 | codex | hardware-escaner-bascula | ⚠️ Conforme; migración sin aplicar | PASO 0: auditó #026, sin bugs. Escáner físico (keydown <50ms + Enter) + báscula (Web Serial, `verificarSoporte`, 9600) + hooks + pestaña Hardware con toggles (`updateConfiguracion`). Sin Supabase directo. **🔴 `015_hardware_config` NO aplicada → toggles fallarán en runtime (42703); repo≠BD.** |
+| 032 | 2026-06-26 | codex | hardware-escaner-bascula | ⚠️ Conforme; migración sin aplicar | PASO 0: auditó #026, sin bugs. Escáner físico (keydown <50ms + Enter) + báscula (Web Serial, `verificarSoporte`, 9600) + hooks + pestaña Hardware con toggles (`updateConfiguracion`). Sin Supabase directo. **🔴 `015_hardware_config` NO aplicada → toggles fallarán en runtime (42703); repo≠BD.** (015 ya aplicada el 06-26.) |
+| 033 | 2026-06-26 | codex | integracion-hardware-pos | ✅ Conforme | PASO 0: auditó #032; **corrigió `escanerFisico.ts`** (no duplica con buscador enfocado). Recreó `014_onboarding_existentes.sql` (repo==BD) y creó `016_producto_venta_peso.sql` (**pendiente**). En `venta/page.jsx`: `useEscanerFisico`→carrito y `useBascula`/venta por peso. Sin Supabase directo. **No rompió fiado/whatsapp/categorías (verificado).** |
 | 034 | 2026-06-26 | antigravity | combos | ✅ Conforme | PASO 0: auditó #031, sin bugs. Capa de datos `combos.ts` + `ComboDialog` (sumas dinámicas y sugerencia 15% desc.) + `CombosManager` (switch activo, vigencia). Sin Supabase directo. Migración `017_combos` creada (PENDIENTE DE APLICAR). Solo build. |
+| 035 | 2026-06-26 | claude-code | conteo-mermas | ✅ Conforme | PASO 0: auditó #030, sin bugs. `inventario.ts`: `guardarConteo` (**detecta diferencias sin ajustar stock**) y `registrarMerma` (**descuenta stock + kardex** vía `ajustarStock` tipo merma). `ConteoInventario`/`MermaDialog`. Sin Supabase directo. Migración `018_conteo_mermas` creada (**PENDIENTE**); mermas funcionan ya. |
+| 037 | 2026-06-26 | antigravity | cliente-frecuente | ✅ Conforme | PASO 0: auditó #034, sin bugs. Migración `019_cliente_frecuente.sql` creada (PENDIENTE). Configuración de cliente frecuente y puntos por peso en Operación. Capa de datos en `clientes.ts` con get/agregar/canjear puntos. Componente `ClienteFrecuente.jsx` para visualización. Sin Supabase directo. |
 
-<!-- Última actualización: 2026-06-24 -->
+<!-- Última actualización: 2026-06-26 -->
+

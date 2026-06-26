@@ -56,6 +56,8 @@ export default function ConfiguracionPage() {
         qr_url: config.qr_url || '',
         escaner_fisico_activo: config.escaner_fisico_activo || false,
         bascula_activa: config.bascula_activa || false,
+        cliente_frecuente_activo: config.cliente_frecuente_activo || false,
+        puntos_por_peso: config.puntos_por_peso !== undefined ? config.puntos_por_peso : 1,
       });
     }
   }, [config]);
@@ -237,6 +239,37 @@ export default function ConfiguracionPage() {
                   <Switch checked={form[key] || false} onCheckedChange={(v) => update(key, v)} />
                 </div>
               ))}
+
+              <div className="flex flex-col gap-3 pt-3 border-t border-border mt-3">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm">Programa de cliente frecuente</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Tus clientes acumulan puntos por sus compras y pueden canjearlos.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.cliente_frecuente_activo || false}
+                    onCheckedChange={(v) => update('cliente_frecuente_activo', v)}
+                  />
+                </div>
+                {form.cliente_frecuente_activo && (
+                  <div className="flex items-center gap-3 pl-4 animate-in fade-in duration-200">
+                    <Label htmlFor="puntos_por_peso" className="text-xs shrink-0">
+                      Puntos por cada $1 de compra:
+                    </Label>
+                    <Input
+                      id="puntos_por_peso"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={form.puntos_por_peso !== undefined ? form.puntos_por_peso : 1}
+                      onChange={(e) => update('puntos_por_peso', parseFloat(e.target.value) || 0)}
+                      className="w-32 h-9 text-xs"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </TabsContent>

@@ -13,6 +13,8 @@ export type ConfiguracionUpdate = Partial<
   onboarding_completado?: boolean;
   escaner_fisico_activo?: boolean;
   bascula_activa?: boolean;
+  cliente_frecuente_activo?: boolean;
+  puntos_por_peso?: number;
 };
 
 export type ConfiguracionConQr = ConfiguracionNegocio & {
@@ -20,6 +22,8 @@ export type ConfiguracionConQr = ConfiguracionNegocio & {
   onboarding_completado: boolean;
   escaner_fisico_activo: boolean;
   bascula_activa: boolean;
+  cliente_frecuente_activo: boolean;
+  puntos_por_peso: number;
 };
 
 export async function getNegocio(negocioId: string): Promise<Pick<Negocio, 'id' | 'nombre'> | null> {
