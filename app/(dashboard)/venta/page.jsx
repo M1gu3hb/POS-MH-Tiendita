@@ -9,6 +9,8 @@ import { useCajaAbierta } from '@/hooks/useCajaAbierta';
 import { useCarritoActivo } from '@/hooks/useCarritoActivo';
 import { useFiado } from '@/hooks/useFiado';
 import { useOffline } from '@/hooks/useOffline';
+import { useEscanerFisico } from '@/hooks/useEscanerFisico';
+import { useBascula } from '@/hooks/useBascula';
 import { getProductos, createProducto } from '@/lib/db/productos';
 import { getCategorias } from '@/lib/db/categorias';
 import { getProveedores } from '@/lib/db/proveedores';
@@ -57,6 +59,7 @@ export default function VentaPage() {
   const KEY_LAST_SALE = `pos-mh-last-sale${userScope}`;
   const queryClient = useQueryClient();
   const ticketRef = useRef(null);
+  const bascula = useBascula(config);
 
   const { items, addItem, updateQty: updateQtyShared, removeItem: removeItemShared, clear: clearCartShared, cerrarVenta: cerrarVentaCarrito } = useCarritoActivo(cajaAbierta?.id || null);
 
@@ -96,6 +99,8 @@ export default function VentaPage() {
   const [fiadoNewNotas, setFiadoNewNotas] = useState('');
   const [fiadoSavingCliente, setFiadoSavingCliente] = useState(false);
   const [selectedCategoriaId, setSelectedCategoriaId] = useState(null);
+  const [pesoDialog, setPesoDialog] = useState(null);
+  const [pendingPesoItem, setPendingPesoItem] = useState(null);
   const processedEventIdsRef = useRef(new Set());
 
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias', negocioId], queryFn: () => getCategorias(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
@@ -136,6 +141,17 @@ export default function VentaPage() {
     }
   }, [isOffline]);
 
+  const focusSearchInput = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    window.requestAnimationFrame(() => {
+      document.querySelector('input[placeholder^="Buscar producto"]')?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    focusSearchInput();
+  }, [focusSearchInput]);
+
   // Agregar al carrito local (offline).
   const addOfflineItem = useCallback((producto) => {
     setOfflineCart((prev) => {
@@ -166,19 +182,69 @@ export default function VentaPage() {
     playScanSuccess();
   }, []);
 
+  const getPrecioPorKg = (producto) => Number(producto?.precio_por_kg || 0);
+
+  const abrirProductoPorPeso = useCallback((producto, opts = {}) => {
+    const precioPorKg = getPrecioPorKg(producto);
+    if (precioPorKg <= 0) {
+      toast.error('Configura el precio por kg de este producto');
+      return false;
+    }
+
+    if (!isOffline && !gated.ensureAccess()) return false;
+    if (!isOffline && !config?.permitir_venta_sin_stock && !producto.permite_venta_sin_stock && producto.stock_actual <= 0) {
+      toast.error('Producto sin stock');
+      return false;
+    }
+
+    setPesoDialog({
+      producto,
+      peso: '',
+      leyendo: bascula.conectada,
+      error: bascula.conectada ? null : (bascula.soportada ? 'Conecta la báscula o ingresa el peso manualmente.' : 'Tu navegador no soporta conexión de báscula. Usa Chrome o Edge.'),
+      showFeedback: !!opts.showFeedback,
+    });
+    if (opts.showFeedback) setScannerOpen(false);
+    focusSearchInput();
+
+    if (bascula.conectada) {
+      void bascula.leerPeso()
+        .then((peso) => {
+          setPesoDialog((actual) => (
+            actual?.producto?.id === producto.id
+              ? { ...actual, peso: String(peso), leyendo: false, error: null }
+              : actual
+          ));
+        })
+        .catch((error) => {
+          setPesoDialog((actual) => (
+            actual?.producto?.id === producto.id
+              ? { ...actual, leyendo: false, error: error?.message || 'No se pudo leer el peso de la báscula.' }
+              : actual
+          ));
+        });
+    }
+
+    return false;
+  }, [bascula, config, focusSearchInput, gated, isOffline]);
+
   const addToCart = useCallback((producto, opts = {}) => {
+    if (producto?.vendido_por_peso) {
+      return abrirProductoPorPeso(producto, opts);
+    }
+
     if (isOffline) {
       // Offline: carrito local, sin gating de suscripción (modo degradado para seguir vendiendo).
       addOfflineItem(producto);
       if (opts.showFeedback) {
         setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: 1, precio: producto.precio_venta, modo: 'local' });
       }
-      return;
+      return true;
     }
-    if (!gated.ensureAccess()) return;
+    if (!gated.ensureAccess()) return false;
     if (!config?.permitir_venta_sin_stock && !producto.permite_venta_sin_stock && producto.stock_actual <= 0) {
       toast.error('Producto sin stock');
-      return;
+      return false;
     }
     const existente = items.find((i) => i.producto_id === producto.id);
     const nuevaCant = (existente?.cantidad || 0) + 1;
@@ -190,7 +256,105 @@ export default function VentaPage() {
     if (opts.showFeedback) {
       setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad: nuevaCant, precio: precioUnitario, modo: 'local' });
     }
-  }, [config, addItem, gated, items, isOffline, addOfflineItem]);
+    return true;
+  }, [abrirProductoPorPeso, config, addItem, gated, items, isOffline, addOfflineItem]);
+
+  const confirmarProductoPorPeso = async () => {
+    if (!pesoDialog?.producto) return;
+
+    const producto = pesoDialog.producto;
+    const peso = Number(String(pesoDialog.peso).replace(',', '.'));
+    const precioPorKg = getPrecioPorKg(producto);
+
+    if (!Number.isFinite(peso) || peso <= 0) {
+      toast.error('Ingresa un peso válido');
+      return;
+    }
+    if (precioPorKg <= 0) {
+      toast.error('Configura el precio por kg de este producto');
+      return;
+    }
+
+    const cantidad = Number(peso.toFixed(3));
+    const productoParaCarrito = { ...producto, precio_venta: precioPorKg, unidad_venta: producto.unidad_venta || 'kg' };
+
+    if (isOffline) {
+      setOfflineCart((prev) => {
+        const idx = prev.findIndex((i) => i.producto_id === producto.id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          const it = copy[idx];
+          const nuevaCantidad = Number(((it.cantidad || 0) + cantidad).toFixed(3));
+          copy[idx] = { ...it, cantidad: nuevaCantidad, precio: precioPorKg, subtotal: precioPorKg * nuevaCantidad };
+          return copy;
+        }
+        return [
+          ...prev,
+          {
+            producto_id: producto.id,
+            nombre: producto.nombre,
+            precio: precioPorKg,
+            costo: producto.costo_unitario || 0,
+            cantidad,
+            subtotal: precioPorKg * cantidad,
+            descuento: 0,
+            sku: producto.sku || null,
+            codigo_barras: producto.codigo_barras || null,
+            unidad_venta: producto.unidad_venta || 'kg',
+          },
+        ];
+      });
+    } else {
+      const existente = items.find((i) => i.producto_id === producto.id);
+      const cantidadObjetivo = Number(((existente?.cantidad || 0) + cantidad).toFixed(3));
+      await addItem(productoParaCarrito, precioPorKg, false);
+      if (existente) {
+        await updateQtyShared(existente.id, cantidadObjetivo, precioPorKg, false);
+      } else {
+        setPendingPesoItem({ productoId: producto.id, cantidad: cantidadObjetivo, precio: precioPorKg });
+      }
+    }
+
+    playScanSuccess();
+    if (pesoDialog.showFeedback) {
+      setScanFeedback({ id: Date.now(), nombre: producto.nombre, cantidad, precio: precioPorKg, modo: 'local' });
+    }
+    toast.success(`Agregado: ${producto.nombre} (${cantidad} kg)`);
+    setPesoDialog(null);
+    focusSearchInput();
+  };
+
+  const leerPesoDesdeBascula = useCallback(() => {
+    if (!pesoDialog?.producto || !bascula.conectada) return;
+
+    const productoId = pesoDialog.producto.id;
+    setPesoDialog((actual) => (actual ? { ...actual, leyendo: true, error: null } : actual));
+    void bascula.leerPeso()
+      .then((peso) => {
+        setPesoDialog((actual) => (
+          actual?.producto?.id === productoId
+            ? { ...actual, peso: String(peso), leyendo: false, error: null }
+            : actual
+        ));
+      })
+      .catch((error) => {
+        setPesoDialog((actual) => (
+          actual?.producto?.id === productoId
+            ? { ...actual, leyendo: false, error: error?.message || 'No se pudo leer el peso de la báscula.' }
+            : actual
+        ));
+      });
+  }, [bascula, pesoDialog?.producto]);
+
+  useEffect(() => {
+    if (!pendingPesoItem || isOffline) return;
+
+    const item = items.find((i) => i.producto_id === pendingPesoItem.productoId);
+    if (!item) return;
+
+    void updateQtyShared(item.id, pendingPesoItem.cantidad, pendingPesoItem.precio, false);
+    setPendingPesoItem(null);
+  }, [items, isOffline, pendingPesoItem, updateQtyShared]);
 
   const updateQty = (idx, qty) => {
     if (isOffline) {
@@ -239,9 +403,12 @@ export default function VentaPage() {
       toast.error('Código duplicado en productos. Revisa el catálogo.');
       return;
     }
-    addToCart(result.producto, { showFeedback: scannerOpen });
-    if (!scannerOpen) toast.success(`Agregado: ${result.producto.nombre}`);
-  }, [productosUI, addToCart, scannerOpen]);
+    const agregado = addToCart(result.producto, { showFeedback: scannerOpen });
+    if (!scannerOpen && agregado) toast.success(`Agregado: ${result.producto.nombre}`);
+    focusSearchInput();
+  }, [productosUI, addToCart, scannerOpen, focusSearchInput]);
+
+  useEscanerFisico(config, handleBarcodeScan);
 
   const handleCrearProductoDesdeNoEncontrado = () => {
     setCodigoParaNuevo(noEncontradoCode || '');
@@ -823,6 +990,70 @@ export default function VentaPage() {
       <MobileCartBar items={carrito} total={total} sym={sym} onUpdateQty={updateQty} onRemove={removeItem} onCobrar={gated(() => (isOffline ? handleCobroOffline() : setCobroOpen(true)))} onCancelar={() => (isOffline ? setOfflineCart([]) : clearCartShared())} disabled={carrito.length === 0 || (!isOffline && needsCaja)} isProcessing={isProcessing} />
 
       <CobroDialog open={cobroOpen} onClose={() => setCobroOpen(false)} total={total} onConfirm={handleCobro} sym={sym} isProcessing={isProcessing} />
+
+      {pesoDialog && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 no-print" onClick={() => { setPesoDialog(null); focusSearchInput(); }}>
+          <div className="bg-card rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-border">
+              <h2 className="font-bold text-sm text-foreground">Producto por peso</h2>
+              <p className="text-xs text-muted-foreground truncate">{pesoDialog.producto.nombre}</p>
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="skeu-card p-3 text-center">
+                <p className="text-xs text-muted-foreground">Peso leído</p>
+                <p className="text-3xl font-black tabular-nums text-primary">
+                  {Number(String(pesoDialog.peso || 0).replace(',', '.')).toFixed(3)} kg
+                </p>
+                {pesoDialog.leyendo && (
+                  <p className="text-xs text-muted-foreground mt-1">Leyendo báscula...</p>
+                )}
+              </div>
+
+              {pesoDialog.error && (
+                <p className="text-xs text-amber-600">{pesoDialog.error}</p>
+              )}
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground">Peso manual (kg)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={pesoDialog.peso}
+                  onChange={(e) => setPesoDialog((actual) => actual ? { ...actual, peso: e.target.value } : actual)}
+                  className="skeu-input w-full rounded-md bg-card px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring mt-1"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Precio por kg</span>
+                <span className="font-bold tabular-nums">{formatMoney(getPrecioPorKg(pesoDialog.producto), sym)}</span>
+              </div>
+              <div className="flex items-center justify-between text-base">
+                <span className="font-bold text-foreground">Total</span>
+                <span className="font-black tabular-nums text-primary">
+                  {formatMoney((Number(String(pesoDialog.peso || 0).replace(',', '.')) || 0) * getPrecioPorKg(pesoDialog.producto), sym)}
+                </span>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => { setPesoDialog(null); focusSearchInput(); }} className="skeu-btn-ghost flex-1 h-10 rounded-xl font-bold text-sm text-foreground">
+                  Cancelar
+                </button>
+                {bascula.conectada && (
+                  <button onClick={leerPesoDesdeBascula} disabled={pesoDialog.leyendo} className="skeu-btn-ghost flex-1 h-10 rounded-xl font-bold text-sm text-foreground disabled:opacity-50">
+                    {pesoDialog.leyendo ? 'Leyendo...' : 'Leer báscula'}
+                  </button>
+                )}
+                <button onClick={confirmarProductoPorPeso} disabled={pesoDialog.leyendo} className="skeu-btn-primary flex-1 h-10 rounded-xl font-bold text-sm disabled:opacity-50">
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showTicket && lastVenta && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-2 sm:p-4 no-print" onClick={closeTicket}>

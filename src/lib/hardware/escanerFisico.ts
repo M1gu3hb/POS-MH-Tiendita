@@ -2,6 +2,12 @@ type EscanerCallback = (codigo: string) => void;
 
 const TIEMPO_MAXIMO_ENTRE_TECLAS_MS = 50;
 
+function esElementoEditable(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target.isContentEditable;
+}
+
 class EscanerFisico {
   private buffer = '';
   private ultimaTecla = 0;
@@ -37,11 +43,17 @@ class EscanerFisico {
   }
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (esElementoEditable(event.target)) {
+      this.limpiarBuffer();
+      return;
+    }
+
     const ahora = Date.now();
 
     if (event.key === 'Enter') {
       const codigo = this.buffer.trim();
-      if (codigo.length > 1 && this.secuenciaRapida) {
+      const enterRapido = this.ultimaTecla > 0 && ahora - this.ultimaTecla < TIEMPO_MAXIMO_ENTRE_TECLAS_MS;
+      if (codigo.length > 1 && this.secuenciaRapida && enterRapido) {
         this.callback?.(codigo);
       }
       this.limpiarBuffer();
