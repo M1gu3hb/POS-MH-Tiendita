@@ -10,13 +10,15 @@ import { formatMoney } from '@/utils/currency';
 import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import InlineSyncIndicator from '@/components/common/InlineSyncIndicator';
+import ConteoInventario from '@/components/inventario/ConteoInventario';
+import MermaDialog from '@/components/inventario/MermaDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Search, Warehouse, Plus, Minus, SlidersHorizontal } from 'lucide-react';
+import { Search, Warehouse, Plus, Minus, SlidersHorizontal, ClipboardList, PackageX } from 'lucide-react';
 import { toast } from 'sonner';
 import { useGatedAction } from '@/hooks/useGatedAction';
 
@@ -44,8 +46,26 @@ export default function InventarioPage() {
   const [adjustQty, setAdjustQty] = useState('');
   const [adjustMotivo, setAdjustMotivo] = useState('');
   const [saving, setSaving] = useState(false);
+  const [conteoOpen, setConteoOpen] = useState(false);
+  const [mermaOpen, setMermaOpen] = useState(false);
   const sym = config?.simbolo_moneda || '$';
   const gated = useGatedAction();
+
+  const invalidarProductos = () => {
+    queryClient.invalidateQueries({ queryKey: ['productos-inventario'] });
+    queryClient.invalidateQueries({ queryKey: ['productos-pos'] });
+    queryClient.invalidateQueries({ queryKey: ['productos-all'] });
+  };
+
+  const abrirConteo = () => {
+    if (!gated.ensureAccess()) return;
+    setConteoOpen(true);
+  };
+
+  const abrirMerma = () => {
+    if (!gated.ensureAccess()) return;
+    setMermaOpen(true);
+  };
 
   const { data: productos, isLoading, isFetching } = useQuery({
     queryKey: ['productos-inventario', negocioId],
@@ -122,9 +142,17 @@ export default function InventarioPage() {
 
   return (
     <div className="p-3 md:p-6 space-y-4 pb-24 lg:pb-6">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-foreground">Inventario</h1>
         <InlineSyncIndicator active={isFetching && !isLoading} label="Actualizando inventario…" />
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={abrirConteo} title="Contar físicamente y detectar faltantes">
+            <ClipboardList className="h-4 w-4 mr-1.5" /> Iniciar conteo
+          </Button>
+          <Button variant="outline" size="sm" className="text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20" onClick={abrirMerma} title="Sacar producto dañado o caducado">
+            <PackageX className="h-4 w-4 mr-1.5" /> Registrar merma
+          </Button>
+        </div>
       </div>
 
       <div className="flex gap-3 flex-wrap">
@@ -293,6 +321,24 @@ export default function InventarioPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConteoInventario
+        open={conteoOpen}
+        onClose={() => setConteoOpen(false)}
+        negocioId={negocioId}
+        usuarioNombre={usuario?.nombre_visible ?? null}
+        sym={sym}
+        onSaved={invalidarProductos}
+      />
+
+      <MermaDialog
+        open={mermaOpen}
+        onClose={() => setMermaOpen(false)}
+        negocioId={negocioId}
+        usuarioNombre={usuario?.nombre_visible ?? null}
+        productos={productos || []}
+        onSaved={invalidarProductos}
+      />
     </div>
   );
 }
