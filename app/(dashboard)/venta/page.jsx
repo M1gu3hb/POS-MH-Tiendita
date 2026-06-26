@@ -12,6 +12,7 @@ import { useOffline } from '@/hooks/useOffline';
 import { useEscanerFisico } from '@/hooks/useEscanerFisico';
 import { useBascula } from '@/hooks/useBascula';
 import { getProductos, createProducto } from '@/lib/db/productos';
+import { getCombos, getProductosComboStock } from '@/lib/db/combos';
 import { getCategorias } from '@/lib/db/categorias';
 import { getProveedores } from '@/lib/db/proveedores';
 import { createVenta } from '@/lib/db/ventas';
@@ -28,6 +29,7 @@ import { normalizeBarcode } from '@/utils/barcodeUtils';
 import { construirUrlWhatsApp, generarMensajeTicket } from '@/utils/whatsapp';
 import { playScanSuccess, playScanError, playSaleSuccess } from '@/utils/audioFeedback';
 import BuscadorProducto from '@/components/venta/BuscadorProducto';
+import CombosDisponibles from '@/components/venta/CombosDisponibles';
 import CategoriaTabs from '@/components/venta/CategoriaTabs';
 import CarritoVenta from '@/components/venta/CarritoVenta';
 import MobileCartBar from '@/components/venta/MobileCartBar';
@@ -106,6 +108,7 @@ export default function VentaPage() {
   const { data: categorias = [] } = useQuery({ queryKey: ['categorias', negocioId], queryFn: () => getCategorias(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
   const { data: proveedores = [] } = useQuery({ queryKey: ['proveedores', negocioId], queryFn: () => getProveedores(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 * 5 });
   const { data: productos = [], isLoading: prodLoading, isFetching: prodFetching } = useQuery({ queryKey: ['productos-pos', negocioId], queryFn: () => getProductos(negocioId, { soloActivos: true }), enabled: !!negocioId, staleTime: 1000 * 60 });
+  const { data: combos = [] } = useQuery({ queryKey: ['combos-pos', negocioId], queryFn: () => getCombos(negocioId), enabled: !!negocioId, staleTime: 1000 * 60 });
 
   const sym = config?.simbolo_moneda || '$';
   const total = carrito.reduce((s, i) => s + i.subtotal - (i.descuento || 0), 0);
@@ -117,6 +120,12 @@ export default function VentaPage() {
   const productosFiltrados = selectedCategoriaId
     ? productosUI.filter((p) => p.categoria_id === selectedCategoriaId)
     : productosUI;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const combosVigentes = combos.filter((combo) => (
+    combo.activo
+    && (!combo.fecha_inicio || combo.fecha_inicio <= hoy)
+    && (!combo.fecha_fin || combo.fecha_fin >= hoy)
+  ));
 
   // Registrar el Service Worker. STEP 6 movido aquí porque app/layout.tsx NO está en
   // los archivos permitidos esta ronda; registrado desde /venta queda activo para todo el origen.
@@ -356,6 +365,44 @@ export default function VentaPage() {
     setPendingPesoItem(null);
   }, [items, isOffline, pendingPesoItem, updateQtyShared]);
 
+  const getComboIdFromItem = (item) => {
+    const sku = item?.sku || '';
+    return sku.startsWith('COMBO:') ? sku.slice('COMBO:'.length) : null;
+  };
+
+  const addComboToCart = useCallback((combo) => {
+    if (isOffline) {
+      toast.error('Los combos requieren conexión');
+      return;
+    }
+    if (!gated.ensureAccess()) return;
+
+    const costoCombo = (combo.combo_productos || []).reduce((sum, item) => {
+      const prod = productos.find((p) => p.id === item.producto_id);
+      return sum + Number(prod?.costo_unitario || 0) * Number(item.cantidad || 0);
+    }, 0);
+
+    const comboProducto = {
+      id: undefined,
+      nombre: `COMBO: ${combo.nombre}`,
+      sku: `COMBO:${combo.id}`,
+      codigo_barras: null,
+      precio_venta: combo.precio_combo,
+      costo_unitario: costoCombo,
+      unidad_venta: 'pieza',
+      stock_actual: 999999,
+      stock_minimo: 0,
+      precio_mayoreo: combo.precio_combo,
+      cantidad_minima_mayoreo: 0,
+      permite_venta_sin_stock: true,
+      vendido_por_peso: false,
+    };
+
+    void addItem(comboProducto, combo.precio_combo, false);
+    playScanSuccess();
+    toast.success(`Combo agregado: ${combo.nombre}`);
+  }, [addItem, gated, isOffline, productos]);
+
   const updateQty = (idx, qty) => {
     if (isOffline) {
       setOfflineCart((prev) => {
@@ -540,6 +587,20 @@ export default function VentaPage() {
         total: item.subtotal - (item.descuento || 0),
         utilidad_snapshot: (item.precio - item.costo) * item.cantidad,
       }));
+      const comboProductoIds = new Set();
+      for (const item of carrito) {
+        const comboId = getComboIdFromItem(item);
+        if (!comboId) continue;
+        const combo = combos.find((c) => c.id === comboId);
+        for (const comboItem of combo?.combo_productos || []) {
+          if (comboItem.producto_id) comboProductoIds.add(comboItem.producto_id);
+        }
+      }
+      const productosComboStock = comboProductoIds.size > 0
+        ? await getProductosComboStock(negocioId, Array.from(comboProductoIds))
+        : [];
+      const productosParaStock = new Map(productos.map((p) => [p.id, p]));
+      productosComboStock.forEach((p) => productosParaStock.set(p.id, p));
 
       const venta = await createVenta({
         venta: {
@@ -562,22 +623,59 @@ export default function VentaPage() {
       });
 
       const stockBajo = [];
+      const stockActualPorProducto = new Map(Array.from(productosParaStock.values()).map((p) => [p.id, Number(p.stock_actual || 0)]));
 
       // Descontar stock + kardex por cada renglón.
       for (const item of carrito) {
-        const prod = productos.find((p) => p.id === item.producto_id);
+        const comboId = getComboIdFromItem(item);
+        if (comboId) {
+          const combo = combos.find((c) => c.id === comboId);
+          for (const comboItem of combo?.combo_productos || []) {
+            const prodCombo = productosParaStock.get(comboItem.producto_id);
+            if (!prodCombo) continue;
+            const cantidadCombo = Number(comboItem.cantidad || 0) * Number(item.cantidad || 1);
+            const stockAnteriorCombo = stockActualPorProducto.get(prodCombo.id) ?? Number(prodCombo.stock_actual || 0);
+            const newStockCombo = Math.max(0, stockAnteriorCombo - cantidadCombo);
+            stockActualPorProducto.set(prodCombo.id, newStockCombo);
+            await ajustarStock({
+              negocioId,
+              productoId: prodCombo.id,
+              productoNombre: prodCombo.nombre,
+              stockAnterior: stockAnteriorCombo,
+              stockNuevo: newStockCombo,
+              tipoMovimiento: 'salida_venta',
+              usuarioId: usuario?.id ?? null,
+              usuarioNombre: cajeroNombre,
+              costoUnitario: prodCombo.costo_unitario || 0,
+              referenciaTipo: 'venta',
+              referenciaId: venta.id,
+            });
+            if (newStockCombo <= (prodCombo.stock_minimo || 0)) {
+              stockBajo.push({
+                nombre: prodCombo.nombre,
+                stock_actual: newStockCombo,
+                unidad: prodCombo.unidad_venta || 'pieza',
+              });
+            }
+          }
+          continue;
+        }
+
+        const prod = productosParaStock.get(item.producto_id);
         if (!prod) continue;
-        const newStock = Math.max(0, (prod.stock_actual || 0) - item.cantidad);
+        const stockAnterior = stockActualPorProducto.get(prod.id) ?? Number(prod.stock_actual || 0);
+        const newStock = Math.max(0, stockAnterior - item.cantidad);
+        stockActualPorProducto.set(prod.id, newStock);
         await ajustarStock({
           negocioId,
-          productoId: item.producto_id,
-          productoNombre: item.nombre,
-          stockAnterior: prod.stock_actual || 0,
+          productoId: prod.id,
+          productoNombre: prod.nombre,
+          stockAnterior,
           stockNuevo: newStock,
           tipoMovimiento: 'salida_venta',
           usuarioId: usuario?.id ?? null,
           usuarioNombre: cajeroNombre,
-          costoUnitario: item.costo,
+          costoUnitario: prod.costo_unitario || item.costo,
           referenciaTipo: 'venta',
           referenciaId: venta.id,
         });
@@ -946,6 +1044,12 @@ export default function VentaPage() {
               categorias={categorias}
               selectedCategoriaId={selectedCategoriaId}
               onSelectCategoria={setSelectedCategoriaId}
+            />
+            <CombosDisponibles
+              combos={combosVigentes}
+              onSelect={addComboToCart}
+              sym={sym}
+              disabled={isOffline || needsCaja}
             />
             <div className="flex-1 overflow-y-auto">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-2">

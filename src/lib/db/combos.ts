@@ -25,6 +25,15 @@ export interface Combo {
   combo_productos?: ComboProductoItem[];
 }
 
+export interface ProductoComboStock {
+  id: string;
+  nombre: string;
+  stock_actual: number;
+  stock_minimo: number;
+  unidad_venta: string | null;
+  costo_unitario: number;
+}
+
 export async function getCombos(negocioId: string): Promise<Combo[]> {
   const { data, error } = await supabase
     .from('combos')
@@ -32,6 +41,24 @@ export async function getCombos(negocioId: string): Promise<Combo[]> {
     .eq('negocio_id', negocioId)
     .order('created_at', { ascending: false })
     .returns<Combo[]>();
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getProductosComboStock(
+  negocioId: string,
+  productoIds: string[],
+): Promise<ProductoComboStock[]> {
+  const ids = Array.from(new Set(productoIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('productos')
+    .select('id, nombre, stock_actual, stock_minimo, unidad_venta, costo_unitario')
+    .eq('negocio_id', negocioId)
+    .in('id', ids)
+    .returns<ProductoComboStock[]>();
 
   if (error) throw error;
   return data ?? [];
