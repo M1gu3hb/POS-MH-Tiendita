@@ -4,6 +4,97 @@ Formato: cada entrada con fecha y los cambios significativos de la fase.
 
 ---
 
+## 2026-06-25 — Fiado mejorado + WhatsApp a número + UX móvil (reportes #025–#027) — auditado
+
+`tsc`/`next build` en verde; sin Supabase directo en componentes (verificado). Sin migraciones nuevas
+(ledger sigue 001–011). Las 5 verificaciones del director pasan.
+
+- **#025 (claude-code) — Fiado mejorado.** En el POS, el botón "Fiado" abre un modal de 3 estados:
+  buscar/seleccionar cliente (por nombre o teléfono), **crear cliente inline sin navegar** (nombre,
+  teléfono, notas, **sin límite de crédito**) y confirmar. Al confirmar, la venta se registra como
+  `metodo_pago='fiado'`, **descuenta stock + kardex** (`ajustarStock`) y carga el saldo
+  (`registrarCargo`), mostrando "Fiado registrado para [nombre]. Debe: $[saldo]". En `/fiado` se quitó
+  `limite_credito` de la UI y se añadió "Liquidar todo" (con confirmación) junto a "Abonar". Migración
+  `012` no fue necesaria (el check ya incluía `'fiado'`).
+- **#026 (codex) — WhatsApp a un número específico.** Nuevo `construirUrlWhatsApp(mensaje, telefono?)`
+  en `src/utils/whatsapp.ts`: con 10 dígitos usa `wa.me/52<num>?text=…`, si no `wa.me/?text=…`. En el
+  modal de ticket, input `type=tel` opcional (`inputMode=numeric`, `maxLength=10`, solo números) que
+  **no se persiste** (estado local, se limpia al cerrar el ticket).
+- **#027 (antigravity) — Navbar inferior móvil.** `MobileQuickNav.jsx` rediseñado como barra fija
+  inferior de 64px, **solo móvil (`md:hidden`)**, con **4 botones** (Dashboard, Venta, Escáner + Menú
+  que abre el drawer del sidebar), icono 24px / texto 10px, ruta activa resaltada. `layout.tsx`:
+  `pb-16 md:pb-0` en `<main>`. `globals.css`: padding horizontal de 16px a los hijos de `<main>` solo
+  en `max-width:767px`. **Desktop sin afectar** (verificado). El escáner móvil se auditó (sin cambios).
+
+> Nota de auditoría: el #025 y el #026 editaron `venta/page.jsx` en paralelo; el merge preservó ambos
+> cambios (verificado). Verificación a nivel build; falta runtime (crear fiado desde POS y ver bajar el
+> stock; navbar móvil en dispositivo real).
+
+---
+
+## 2026-06-25 — Migración 011 al repo + preparación de deploy (reportes #020 ×2) — auditado
+
+> Nota: **dos reportes con número #020** (colisión): claude-code `fix-migration-011` y codex `deploy-prep`.
+
+- **#020 (claude-code) — Migración 011 faltante agregada al repo.** Se commiteó
+  `supabase/migrations/011_rpc_crear_venta_completa.sql` (commit `0afe289`) con la definición del RPC
+  transaccional (idéntica a la aplicada en la BD). **repo == BD restaurado** — disco `001`–`011` ==
+  ledger. **Verificado por auditoría:** firma del RPC (16 params + `SECURITY DEFINER`) coincide con la
+  función desplegada (`pg_get_function_arguments`). Cierra el bloqueante crítico del #019.
+- **#020 (codex) — Preparación de deploy (sin tocar código de negocio).** Nuevos `vercel.json`
+  (framework nextjs) y `docs/DEPLOYMENT.md` (guía: prerequisitos, pasos, env vars, post-deploy, Stripe
+  webhook). `next.config.mjs`: dominio de Supabase Storage en `images.remotePatterns`. `.env.example`
+  actualizado. Build de producción en verde con las env vars cargadas. PASO 0: auditó #017.
+
+---
+
+## 2026-06-25 — Offline sync transaccional (reporte #019) — auditado
+
+- **#019 (claude-code) — Sincronización offline vía RPC `crear_venta_completa`.** Nuevo
+  `app/api/ventas/route.ts` (POST): valida sesión, toma `negocio_id`/`cajero_id` de la sesión y llama
+  el RPC transaccional con el cliente admin (service_role). `src/lib/offline/ventas.ts`:
+  `sincronizarVentas` ahora hace `POST /api/ventas` por venta pendiente (200 → marca sincronizada;
+  error → reintenta), devuelve `{ sincronizadas, fallidas }`. `useOffline.js`: toasts de resultado al
+  reconectar. **Cierra el bug HIGH del #016:** las ventas offline ahora **descuentan stock + kardex**
+  atómicamente al sincronizar. Sin Supabase directo en componentes (el RPC va server-side). PASO 0:
+  auditó #016, todo intacto.
+
+> 🔴 **Hallazgo de auditoría (bloqueante de deploy):** el RPC `crear_venta_completa` figura como
+> migración `011` **aplicada en la BD** y el código lo invoca, pero **no existe `011_*.sql` en el repo**
+> (`supabase/migrations/` solo tiene 001–010). repo ≠ BD; un entorno nuevo no tendría el RPC. Hay que
+> volcar la definición a un archivo de migración y commitearlo. Ver `BUGS_PENDING.md`.
+
+---
+
+## 2026-06-25 — Features + limpieza colaboradores (reportes #016–#018) — auditado
+
+`tsc`/`next build` en verde; sin Supabase directo en componentes (verificado). **Sin migraciones
+nuevas; ninguna pendiente** (disco = ledger = 001–010). Cada agente auditó su reporte previo
+(016→013, 017→014, 018→015).
+
+- **#016 (claude-code) — Modo offline básico (Service Worker + IndexedDB).** Nuevo `public/sw.js`
+  (cache-first de assets, network-first de navegación; no intercepta Supabase/API). Capa
+  `src/lib/offline/*` (IndexedDB `pos-offline-db`: `productos_cache`, `ventas_pendientes`,
+  `config_cache`), hook `useOffline.js` (detecta `online/offline`, sincroniza al reconectar),
+  `OfflineBanner.jsx`. En `venta/page.jsx`: registro del SW, cache de productos/config, carrito local
+  offline y cobro offline en cola → `sincronizarVentas` (vía `createVenta`) al volver internet.
+  **Caveat:** la sincronización no descuenta stock/kardex (ver `BUGS_PENDING.md`).
+- **#017 (codex) — UX: nombre de cliente + cerrar sesión.** `CobroDialog.jsx`: campo opcional "Nombre
+  del cliente" → se guarda en `ventas.notas` con prefijo `Cliente: ` (sin columna nueva).
+  `TicketVenta.jsx` muestra "Cliente: <nombre>" si existe. `cuenta/page.jsx`: botón "Cerrar sesión"
+  (destructivo, con divider) usando `signOut` de `useAuth`. Resuelve el pendiente de cerrar sesión.
+- **#018 (antigravity) — Limpieza Fase 6 + docs.** Eliminó `src/components/common/EnMigracion.tsx`
+  (huérfano). Desinstaló deps sin uso: `three` (+`@types/three`), `react-leaflet`, `moment`,
+  `react-quill` (verificado: cero imports). Verificó que todas las tablas clave tienen su trigger
+  `update_updated_at` (ninguno faltaba). Actualizó `PROJECT_CONTEXT.md`, `NEXT_STEPS.md` y el diagrama
+  de capas de `ARCHITECTURE.md` (añadió la capa offline).
+
+> Nota de auditoría: verificación a nivel build + introspección de BD; falta runtime (modo offline
+> real cortando red, nombre de cliente en ticket). El #018 reescribió docs de planeación
+> (`NEXT_STEPS.md`/`PROJECT_CONTEXT.md`) — conviene revisar coherencia con `BUGS_PENDING.md`.
+
+---
+
 ## 2026-06-25 — Features colaboradores (reportes #013–#015) — auditado
 
 Tres features. `tsc`/`next build` en verde; sin Supabase directo en componentes (verificado).

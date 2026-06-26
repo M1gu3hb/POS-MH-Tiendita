@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import ThemeToggle from '@/components/layout/ThemeToggle';
 import MobileQuickNav from '@/components/layout/MobileQuickNav';
+import OnboardingTutorial from '@/components/onboarding/OnboardingTutorial';
+import { useOnboarding } from '@/hooks/useOnboarding';
 import { useTheme } from '@/hooks/useTheme';
 import { useConfig } from '@/hooks/useConfig';
 import { useNegocio } from '@/hooks/useNegocio';
@@ -36,6 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { config } = useConfig();
   const { negocio } = useNegocio();
   const { cajaAbierta } = useCajaAbierta();
+  const { mostrarTutorial } = useOnboarding();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -45,6 +48,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // useNegocio lo lee por la capa de datos (src/lib/db/configuracion.ts), sin
   // consultar Supabase directamente desde el layout. Fallback 'POS MH' mientras carga.
   const nombre = negocio?.nombre || 'POS MH';
+  // Iniciales del avatar: primeras letras de cada palabra (máx 2, mayúsculas).
+  // "Abarrotes Miguel" → "AM"; "Mini Super" → "MS"; "Juan" → "JU". Fallback "MH".
+  const iniciales = (() => {
+    const n = (negocio?.nombre || '').trim();
+    if (!n) return 'MH';
+    const palabras = n.split(/\s+/).filter(Boolean);
+    if (palabras.length >= 2) return (palabras[0][0] + palabras[1][0]).toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  })();
 
   useEffect(() => {
     setMobileOpen(false);
@@ -91,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 boxShadow: '0 2px 8px rgba(37,99,235,0.5), 0 1px 0 rgba(255,255,255,0.1) inset',
               }}
             >
-              <span className="text-white font-black text-sm">MH</span>
+              <span className="text-white font-black text-sm">{iniciales}</span>
             </div>
           )}
           {!collapsed && (
@@ -191,6 +203,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       <MobileQuickNav onOpenMenu={() => setMobileOpen(true)} />
+      {mostrarTutorial && <OnboardingTutorial />}
     </div>
   );
 }

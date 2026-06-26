@@ -34,13 +34,11 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
 
 ## Base de datos / RLS
 
-- [ ] **Triggers de `updated_at`** _(detectado Fase 1)_
-  Varias tablas tienen `updated_at timestamptz default now()` pero **no** se
-  actualiza solo en cada UPDATE. Falta una función trigger `set_updated_at()` +
-  triggers `before update`. No se añade ahora para no exceder el esquema del prompt.
-  **Acción:** migración `003_triggers.sql` con `set_updated_at()` aplicada a
-  `negocios`, `usuarios`, `proveedores`, `productos`, `configuracion_negocio`,
-  `carritos_activos`, `suscripciones`.
+- [x] **Triggers de `updated_at`** _(RESUELTO/VERIFICADO 2026-06-25, reporte 018)_
+  El #018 verificó vía `information_schema.triggers` que todas las tablas operativas clave tienen su
+  trigger `update_updated_at` activo: `negocios`, `usuarios`, `productos`, `proveedores`,
+  `configuracion_negocio`, `carritos_activos`, `suscripciones` y `clientes_fiado` (añadido en `008`).
+  No faltaba ninguno; no hizo falta DDL adicional.
 
 - [x] **Lectura de `suscripciones` para cajeros** _(RESUELTO 2026-06-24, migración 006, reporte 005)_
   Se aplicó la política `suscripcion_select_cajero` (`FOR SELECT USING (negocio_id = get_negocio_id())`)
@@ -88,8 +86,8 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   `reportes_generados.referencia_id` es `uuid`; se omitió ese campo para el resumen. Revisar si
   se quiere otra columna para el identificador de periodo.
 
-- [ ] **`@/components/common/EnMigracion.tsx`** quedó sin uso tras portar todas las páginas.
-  **Acción:** eliminar en limpieza (Fase 6).
+- [x] **`@/components/common/EnMigracion.tsx`** _(RESUELTO 2026-06-25, reporte 018)_
+  Eliminado en la limpieza de Fase 6; verificado que ya no existe ni se referencia.
 
 - [ ] **Tipado estricto de páginas `.jsx`** _(Fase 5)_
   Las páginas se portaron como `.jsx` (no type-checkeadas) para acelerar y evitar el choque de
@@ -101,8 +99,9 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   usa el fallback 'POS MH'. **Acción:** exponer el nombre del negocio (p.ej. añadirlo a `useAuth`
   o un hook `useNegocio`) y mostrarlo.
 
-- [ ] **Botón de cerrar sesión** _(Fase 5)_
-  `signOut()` existe en `useAuth` pero aún no hay UI; irá en la página `cuenta` al portarla.
+- [x] **Botón de cerrar sesión** _(RESUELTO 2026-06-25, reporte 017)_
+  El #017 añadió el botón "Cerrar sesión" (`Button variant="destructive"`) al final de
+  `app/(dashboard)/cuenta/page.jsx`, con divider, usando el `signOut` ya expuesto en `useAuth`.
 
 ## Infra / despliegue
 
@@ -127,12 +126,10 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   **Acción (rule 6):** decidir en Fase 5 si se fusionan en `Egresos` o se eliminan;
   registrar la decisión en `docs/DECISIONS.md`.
 
-- [ ] **Dependencias pesadas posiblemente sin uso** _(detectado Fase 1)_
-  `three`, `react-leaflet`, `react-quill`, `moment` se conservan (regla: mantener
-  todas las deps del original), pero conviene verificar su uso real en Fase 6 y, de
-  no usarse, proponer su retiro (`react-quill`/`react-leaflet` además requieren
-  cuidado de SSR en Next).
-  **Acción:** auditar con la migración de páginas; anotar hallazgos aquí.
+- [x] **Dependencias pesadas posiblemente sin uso** _(RESUELTO 2026-06-25, reporte 018)_
+  El #018 removió `three` (+`@types/three`), `react-leaflet`, `moment` y `react-quill` tras confirmar
+  cero imports. **Verificado por auditoría:** ningún archivo de `src/`/`app/` los importa. `date-fns`
+  se conserva (sí se usa). `tsc`/`next build` en verde tras el retiro.
 
 ## Detectados en reportes colaboradores 002–004 (2026-06-24)
 
@@ -305,4 +302,130 @@ mezclar alcances. Cada ítem indica fase de detección y acción sugerida.
   Varios agentes corriendo `next build` a la vez causan `ENOENT`/`ENOTEMPTY` en `.next`. Se resuelve con
   `.next` limpio y sin builds concurrentes. No es bug de código. **Acción:** serializar builds.
 
-<!-- Última actualización: 2026-06-25 — Auditoría de reportes colaboradores 013–015 -->
+## Detectados en reportes colaboradores 016–018 (2026-06-25)
+
+> **Migraciones: sin novedad.** Los reportes 016–018 no crearon migraciones. Disco = `001`–`010`
+> (10 archivos), todas en el ledger (verificado el turno previo). **No hay migraciones pendientes.**
+> Ninguna migración fue aplicada por un agente que no fuera su autor en este lote.
+
+### Modo offline (reporte 016 — claude-code)
+- [x] **[HIGH] Ventas offline no descuentan stock/kardex al sincronizar** _(RESUELTO 2026-06-25, reporte 019)_
+  El #019 reescribió `sincronizarVentas` para hacer `POST /api/ventas` → RPC transaccional
+  `crear_venta_completa` (venta + detalle + **descuento de stock + kardex** atómico), en vez del antiguo
+  `createVenta`. `negocio_id`/`cajero_id` salen de la sesión; el RPC se invoca server-side con el cliente
+  admin. Las ventas offline ya descuentan inventario al sincronizar. Verificado a nivel código + build +
+  introspección del RPC (falta runtime real). **Ver bug crítico de la migración 011 abajo.**
+- [ ] **Cobro offline siempre `metodo_pago='efectivo'` y sin nombre de cliente** _(reporte 016)_
+  Offline no abre `CobroDialog`, así que no se elige método de pago ni se captura el nombre de cliente
+  (la feature del #017). **Acción:** permitir método/cliente en el cobro offline si se requiere.
+- [ ] **Gating de suscripción omitido en modo offline** _(reporte 016, decisión consciente)_
+  Sin red no se valida la suscripción; se permite seguir vendiendo (modo degradado). **Acción:**
+  revalidar al reconectar; documentar como comportamiento esperado en SECURITY.md.
+- [ ] **Service Worker registrado en `venta/page.jsx`, no en el root layout** _(reporte 016)_
+  STEP pedía registrarlo en `app/layout.tsx` (no permitido); se registró en `/venta`. El SW controla
+  todo el origen una vez instalado, pero solo se instala al visitar `/venta`. **Acción:** mover el
+  registro al root layout para cobertura desde la primera carga.
+
+### UX / nombre de cliente (reporte 017 — codex)
+- [ ] **Nombre de cliente guardado en `ventas.notas` con prefijo `Cliente: `** _(reporte 017)_
+  Para no crear columna, el nombre se persiste en `notas` y `TicketVenta` lo parsea por prefijo (o lee
+  `venta.nombre_cliente` si existe). Funciona, pero es frágil (parsing de string) y mezcla datos en
+  `notas`. **Acción:** si se formaliza, añadir columna `nombre_cliente` en una migración.
+
+### 🟠 Proceso — colaborador editó docs de planeación (reporte 018)
+- [ ] **#018 reescribió `PROJECT_CONTEXT.md`, `NEXT_STEPS.md` y `ARCHITECTURE.md`** _(auditoría)_
+  La limpieza de Fase 6 incluyó reescribir docs de planeación que solapan con el dominio del auditor.
+  No es bug de código, pero conviene que el director confirme que el nuevo `NEXT_STEPS.md` refleja los
+  pendientes reales (esta lista `BUGS_PENDING.md` sigue siendo la fuente de detalle técnico). **Acción:**
+  revisar coherencia entre `NEXT_STEPS.md` (reescrito por #018) y `BUGS_PENDING.md` (auditor).
+
+## Detectados en reporte colaborador 019 (2026-06-25)
+
+### Migración `011` faltante en el repo — RESUELTO
+- [x] **El RPC `crear_venta_completa` (migración 011) ya está en el repo** _(RESUELTO 2026-06-25, reporte 020 claude-code)_
+  El #020 (claude-code) agregó `supabase/migrations/011_rpc_crear_venta_completa.sql` (commit `0afe289`).
+  **Verificado por auditoría:** el archivo existe y contiene el RPC real; su firma (16 parámetros +
+  `SECURITY DEFINER` + `REVOKE`/`GRANT service_role`) **coincide con la función desplegada** en la BD
+  (`pg_get_function_arguments`). Disco `001`–`011` == ledger `001`–`011`. **repo == BD restaurado.**
+
+<details><summary>Histórico (hallazgo original del reporte 019)</summary>
+
+El RPC figuraba aplicado en la BD (ledger `011`, `version 20260625060825`) y el código lo invocaba
+desde `app/api/ventas/route.ts`, pero `supabase/migrations/` solo tenía `001`–`010` y ningún `.sql`
+contenía `crear_venta_completa`. Era bloqueante de deploy (un entorno nuevo no tendría el RPC).
+</details>
+
+### Offline sync (reporte 019 — notas menores)
+- [ ] **Costo/utilidad de ventas offline se recalculan en el server al sincronizar** _(reporte 019)_
+  El RPC deriva `costo_total`/`utilidad_bruta` del producto al momento del sync; ignora los snapshots
+  de costo del payload offline. Aceptable para una tiendita; anotado por trazabilidad.
+- [ ] **`corte_id` de una venta offline puede apuntar a un corte ya cerrado al sincronizar** _(reporte 019)_
+  La FK sigue válida; la venta queda asociada a ese corte. Comportamiento aceptable; anotado.
+
+## Detectados en reportes 021–024 (deploy + auditorías finales) — 2026-06-25
+
+> **Estado de deploy verificado por el auditor vía Vercel API** (no documentado en ningún reporte):
+> el proyecto `mh-astral-systems/pos-mh-tiendita` tiene un deployment **READY en producción**
+> (`dpl_8SCP4af3djuW3C7HyPvfhEGLUEZn`, commit `d92714e` "migration 011", redeploy de codex). Es
+> **posterior** a los intentos BLOCKED/ERROR que reportó el #021. Es decir: el deploy del #021 quedó
+> BLOCKED, pero un redeploy posterior **sí llegó a READY**. `READY` = build OK + sirviendo; **no**
+> garantiza correctitud funcional en runtime.
+
+### 🔴 Deploy / runtime
+- [ ] **Funcionalidad en producción sin verificar (runtime cero)** _(auditoría 021–024)_
+  Hay un deploy READY, pero **ningún flujo se ha probado E2E** contra el entorno desplegado (login,
+  venta, Supabase, RLS, offline). Las 3 auditorías finales lo reconocen. **Acción (bloqueante para
+  usuarios reales):** smoke test en la URL de producción — login, registro, una venta completa.
+- [ ] **SSO Deployment Protection desactivada en el proyecto Vercel** _(reporte 021)_
+  El #021 desactivó la protección de deployment para poder hacer fetch HTTP directo y la dejó así.
+  **Acción:** re-confirmar y re-activar la protección si el preview/prod no debe ser público.
+- [ ] **Notas de config de Vercel** _(auditoría)_ `framework` a nivel de proyecto = `null` (se apoya en
+  `vercel.json`); `nodeVersion = 24.x` para un Next 14 (oficialmente soportado hasta Node 20/22).
+  Riesgo bajo; **verificar** que no cause comportamiento raro. `live: false` en el proyecto — confirmar
+  que la URL de producción esté realmente sirviendo el deploy READY.
+
+### 🟠 Calidad de auditoría (reportes 022, 023, 024)
+- [ ] **Las 3 "auditorías finales" son auto-auditorías y ninguna detectó el fallo de deploy** _(meta)_
+  El #022 (claude-code), #023 (codex) y #024 (antigravity) auditaron **solo el trabajo de su propia
+  IA** y los tres declararon "LISTO PARA PRODUCCIÓN" basándose en código + build, **sin** validar el
+  deploy ni runtime. El #023 incluso **leyó el #021** (deploy BLOCKED) y aun así no lo reflejó en su
+  veredicto. **Implicación:** los tres "LISTO" cubren código/build, no un deploy funcional verificado.
+  **Acción:** una verificación cruzada independiente (esta auditoría) + smoke test real antes de abrir.
+
+### Dependencias (reporte 021, recurrente)
+- [ ] **`npm` reporta 5 vulnerabilidades (1 moderada, 4 altas)** _(reportes 020b, 021)_
+  Sin resolver. **Acción:** evaluar/upgradear antes de tráfico real.
+
+## Detectados en reportes colaboradores 025–027 (2026-06-25)
+
+> **Migraciones: sin novedad.** 025 evaluó la `012` pero NO la creó (el check `ventas.metodo_pago` ya
+> incluye `'fiado'` desde `008`). 026/027 no crearon migraciones. Ledger sigue en `001`–`011`,
+> **ninguna pendiente**.
+
+### 🟠 Conflicto multi-agente (reportes 025 y 026) — sin pérdida de datos
+- [ ] **025 y 026 editaron `app/(dashboard)/venta/page.jsx` en paralelo** _(auditoría)_
+  El #025 (fiado) y el #026 (teléfono WhatsApp) modificaron el mismo archivo concurrentemente.
+  **Verificado: el merge preservó ambos cambios** — coexisten en el archivo (`construirUrlWhatsApp`/
+  `whatsappTelefono` del 026 y `handleCobroFiado`/`handleCrearClienteFiado`/"Fiado registrado para" del
+  025). No hubo ediciones perdidas, pero es el patrón de riesgo ya señalado. **Acción:** serializar
+  tareas que toquen `venta/page.jsx`.
+
+### Fiado (reporte 025)
+- [ ] **Atomicidad venta↔cargo en fiado (preexistente)** _(reporte 025)_
+  `createVenta` + `ajustarStock` + `registrarCargo` son operaciones separadas; si `registrarCargo`
+  falla tras crear la venta, la venta queda pero el saldo del cliente no sube. Riesgo bajo para una
+  tiendita. **Acción:** un RPC `crear_venta_fiado` (venta + stock + cargo atómico) si se quiere robustez.
+- [ ] **`limite_credito` oculto en UI pero la columna sigue en BD** _(reporte 025)_
+  Se quitó el límite del formulario/perfil de fiado, pero la columna `clientes_fiado.limite_credito` no
+  se eliminó (solo se oculta). Sin impacto; anotado por trazabilidad.
+
+### UX móvil (reporte 027)
+- [ ] **`globals.css`: `main > * { padding !important }` en móvil** _(reporte 027)_
+  La regla (dentro de `@media max-width:767px`) fuerza padding horizontal a TODOS los hijos directos de
+  `<main>`. Solo afecta móvil (desktop intacto), pero el `!important` sobre todos los hijos puede
+  deformar elementos full-bleed o duplicar padding en páginas que ya lo tienen. **Acción:** validar en
+  navegador móvil; acotar el selector si alguna página se ve mal.
+
+<!-- Última actualización: 2026-06-25 — Auditoría de reportes 021–024 (deploy + auditorías finales) -->
+
+<!-- Última actualización: 2026-06-25 — Auditoría de reportes colaboradores 025–027 -->

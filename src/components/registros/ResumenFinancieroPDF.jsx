@@ -6,6 +6,7 @@ import { X, Printer, Download, Loader2 } from 'lucide-react';
 import PDFStyles, { PDF_STYLES } from './PDFStyles';
 import { downloadPdfFromElement, pdfFilename } from '@/lib/downloadPdfReport';
 import { downloadHtmlReport, reportFilename } from '@/lib/downloadHtmlReport';
+import { useNegocio } from '@/hooks/useNegocio';
 import { toast } from 'sonner';
 
 export default function ResumenFinancieroPDF({
@@ -19,6 +20,8 @@ export default function ResumenFinancieroPDF({
 }) {
   const printRef = useRef(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  // El nombre del negocio vive en `negocios.nombre` (no en configuracion_negocio).
+  const { negocio } = useNegocio();
 
   // Cerrar con tecla Escape
   useEffect(() => {
@@ -105,7 +108,7 @@ export default function ResumenFinancieroPDF({
               <div className="pdf-header">
                 {config?.logo_url && <img src={config.logo_url} alt="" />}
                 <div>
-                  <h1>{config?.nombre_negocio || 'Negocio'}</h1>
+                  <h1>{negocio?.nombre || config?.nombre_negocio || 'Negocio'}</h1>
                   {config?.direccion && <p style={{ fontSize: 11, color: '#6b7280' }}>{config.direccion}</p>}
                   {config?.telefono && <p style={{ fontSize: 11, color: '#6b7280' }}>Tel: {config.telefono}</p>}
                 </div>
