@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Save, Upload } from 'lucide-react';
 import BaseDatosTab from '@/components/configuracion/BaseDatosTab';
+import { useBascula } from '@/hooks/useBascula';
 
 // Nota: el nombre del negocio vive en la tabla `negocios`, no en
 // `configuracion_negocio`; por eso ya no se edita aquí (ver docs/BUGS_PENDING.md).
@@ -21,6 +22,7 @@ export default function ConfiguracionPage() {
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
   const [savingQr, setSavingQr] = useState(false);
+  const [savingHardware, setSavingHardware] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
   const { data: config } = useQuery({
@@ -52,9 +54,13 @@ export default function ConfiguracionPage() {
         iva_porcentaje: config.iva_porcentaje || 0,
         mostrar_logo_ticket: config.mostrar_logo_ticket !== false,
         qr_url: config.qr_url || '',
+        escaner_fisico_activo: config.escaner_fisico_activo || false,
+        bascula_activa: config.bascula_activa || false,
       });
     }
   }, [config]);
+
+  const bascula = useBascula(form);
 
   useEffect(() => {
     const url = form.qr_url?.trim();
@@ -117,6 +123,34 @@ export default function ConfiguracionPage() {
     }
   };
 
+  const handleHardwareToggle = async (field, value) => {
+    const valorAnterior = form[field] || false;
+    update(field, value);
+
+    if (!config) return;
+
+    setSavingHardware(true);
+    try {
+      await updateConfiguracion(negocioId, { [field]: value });
+      queryClient.invalidateQueries({ queryKey: ['config-negocio'] });
+      toast.success('Configuración de hardware guardada');
+    } catch {
+      update(field, valorAnterior);
+      toast.error('Error al guardar hardware');
+    } finally {
+      setSavingHardware(false);
+    }
+  };
+
+  const handleConectarBascula = async () => {
+    try {
+      await bascula.conectar();
+      toast.success('Báscula conectada');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Error al conectar báscula');
+    }
+  };
+
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
   return (
@@ -134,6 +168,7 @@ export default function ConfiguracionPage() {
             <TabsTrigger value="identidad">Identidad</TabsTrigger>
             <TabsTrigger value="operacion">Operación</TabsTrigger>
             <TabsTrigger value="tickets">Tickets</TabsTrigger>
+            <TabsTrigger value="hardware">Hardware</TabsTrigger>
             <TabsTrigger value="visual">Visual</TabsTrigger>
             <TabsTrigger value="basedatos">Base de datos</TabsTrigger>
           </TabsList>
@@ -234,6 +269,70 @@ export default function ConfiguracionPage() {
                 <div className="mt-3 flex items-center justify-center sm:justify-start">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={qrDataUrl} alt="Código QR del negocio" className="h-[150px] w-[150px] rounded-lg bg-white p-2 border border-border" />
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="hardware" className="mt-4 space-y-4">
+          <div className="skeu-panel p-5 space-y-5">
+            <div>
+              <h2 className="font-bold text-foreground text-sm">Hardware</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Dispositivos conectados para agilizar la venta en tienda.
+              </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 py-3 border-b border-border">
+              <div>
+                <Label className="text-sm">Escáner físico (USB/Bluetooth)</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Si tienes un lector de código de barras conectado, actívalo para escanear productos directamente.
+                </p>
+              </div>
+              <Switch
+                checked={form.escaner_fisico_activo || false}
+                disabled={savingHardware}
+                onCheckedChange={(value) => handleHardwareToggle('escaner_fisico_activo', value)}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <Label className="text-sm">Báscula conectada</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Para vender productos por peso. Requiere báscula con conexión USB y navegador Chrome o Edge.
+                  </p>
+                </div>
+                <Switch
+                  checked={form.bascula_activa || false}
+                  disabled={savingHardware}
+                  onCheckedChange={(value) => handleHardwareToggle('bascula_activa', value)}
+                />
+              </div>
+
+              {form.bascula_activa && (
+                <div className="rounded-lg border border-border bg-muted/50 p-3 space-y-3">
+                  {!bascula.soportada && (
+                    <p className="text-xs text-destructive">
+                      Tu navegador no soporta conexión de báscula. Usa Chrome o Edge.
+                    </p>
+                  )}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <Button
+                      type="button"
+                      onClick={handleConectarBascula}
+                      disabled={!bascula.soportada || bascula.conectada}
+                      className="bg-primary"
+                    >
+                      Conectar báscula
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {bascula.conectada ? 'Báscula conectada' : 'Báscula no conectada'}
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

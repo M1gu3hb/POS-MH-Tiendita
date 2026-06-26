@@ -8,11 +8,18 @@ import type { ConfiguracionNegocio, Negocio } from '@/lib/db/types';
 
 export type ConfiguracionUpdate = Partial<
   Omit<ConfiguracionNegocio, 'id' | 'negocio_id' | 'updated_at'>
-> & { qr_url?: string | null; onboarding_completado?: boolean };
+> & {
+  qr_url?: string | null;
+  onboarding_completado?: boolean;
+  escaner_fisico_activo?: boolean;
+  bascula_activa?: boolean;
+};
 
 export type ConfiguracionConQr = ConfiguracionNegocio & {
   qr_url: string | null;
   onboarding_completado: boolean;
+  escaner_fisico_activo: boolean;
+  bascula_activa: boolean;
 };
 
 export async function getNegocio(negocioId: string): Promise<Pick<Negocio, 'id' | 'nombre'> | null> {
